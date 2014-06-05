@@ -2,37 +2,67 @@ import numpy as np
 import cPickle as cp
 import theano
 import theano.tensor as T
+import time
 
-from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
-
-from models import LinearGaussian
+#from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
+from theano.tensor.shared_randomstreams import RandomStreams
+from models import MixedLinearGaussian as Lmodel
 
 from matplotlib import pyplot as pp
 
 from inference_engines import ParticleFilter
 
-statedims=2
-datadims=5
-nparticles=1000
+statedims=10
+datadims=20
+nparticles=2000
 
 PF=ParticleFilter(datadims, statedims, nparticles)
 
-genproc=LinearGaussian(statedims, datadims)
-tranproc=LinearGaussian(statedims, statedims)
+genproc=Lmodel(statedims, datadims, 4)
+tranproc=Lmodel(statedims, statedims, 4)
 
-theta=0.1
-trueM=np.asarray([[np.cos(theta), -np.sin(theta)],[np.sin(theta), np.cos(theta)]],dtype='float32')
-trueG=(np.random.randn(statedims,datadims)*0.5).astype(np.float32)
-tranproc.M.set_value(trueM)
-genproc.M.set_value(trueG)
-tranproc.log_stddev.set_value((np.ones(statedims)*-5.0).astype(np.float32))
+nt=1000
 
-nt=10000
-s=[np.asarray([0,1])]
+#theta=0.1
+#trueM=np.asarray([[np.cos(theta), -np.sin(theta)],[np.sin(theta), np.cos(theta)]],dtype='float32')
+#trueG=(np.random.randn(statedims,datadims)*0.5).astype(np.float32)
+#tranproc.M.set_value(trueM)
+#genproc.M.set_value(trueG)
+#tranproc.log_stddev.set_value((np.ones(statedims)*-7.0).astype(np.float32))
+
+#s=[np.asarray([0,1])]
+#for i in range(nt):
+	#s.append(np.dot(s[i],trueM))
+#s=np.asarray(s)
+#xsamps=np.dot(s,trueG)+np.random.randn(s.shape[0],datadims)
+
+M=tranproc.Ms.get_value()
+sp=tranproc.spreads.get_value()
+c=tranproc.centers.get_value()
+b=tranproc.biases.get_value()
+M[0]=M[0]*0.1
+sp[0]=sp[0]*0.1
+c[0]=c[0]*0.0
+b[0]=-1.0
+tranproc.Ms.set_value(M)
+tranproc.spreads.set_value(sp)
+tranproc.centers.set_value(c)
+tranproc.biases.set_value(b)
+
+s=T.fmatrix()
+snext=theano.function([s],tranproc.compute_conditional_means(s),allow_input_downcast=True)
+
+
+st=np.random.randn(1,statedims)
+sh=[st[0]]
 for i in range(nt):
-	s.append(np.dot(s[i],trueM))
-s=np.asarray(s)
-xsamps=np.dot(s,trueG)+np.random.randn(s.shape[0],datadims)
+	st=snext(sh[i].reshape((1,statedims)))
+	sh.append(st[0])
+sh=np.asarray(sh)
+pp.plot(sh)
+pp.show()
+exit()
+	
 
 prop_samps, prop_probs = tranproc.get_samples(PF.current_state)
 
@@ -61,15 +91,17 @@ getweights=theano.function([],PF.current_weights)
 esshist=[]
 statehist=[]
 weighthist=[]
+t0=time.time()
 for i in range(nt):
 	samplestep(xsamps[i])
 	ess=getESS()
 	esshist.append(ess)
-	if ess<nparticles/2:
+	if ess<nparticles/4:
 		resample()
 	statehist.append(getstates())
 	weighthist.append(getweights())
 
+print time.time()-t0
 esshist=np.asarray(esshist)
 statehist=np.asarray(statehist)
 weighthist=np.asarray(weighthist)
@@ -79,6 +111,7 @@ meanstates=np.sum(statehist*np.reshape(weighthist, (statehist.shape[0], nparticl
 pp.plot(esshist)
 pp.figure(2)
 pp.plot(meanstates)
+pp.plot(s)
 pp.show()
 
 

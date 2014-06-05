@@ -112,7 +112,7 @@ class MixedLinearGaussian():
 			init_biases=np.zeros((n_components)).astype(np.float32)
 			init_spreads=np.tile(np.eye(input_dims),(n_components,1,1)).astype(np.float32)
 			#init_Ms=np.tile(np.zeros((input_dims,output_dims)),(n_components,1,1)).astype(np.float32)
-			init_Ms=np.tile(np.random.randn(input_dims,output_dims),(n_components,1,1)).astype(np.float32)
+			init_Ms=(np.random.randn(n_components,input_dims,output_dims)*3).astype(np.float32)
 			init_bs=np.zeros((n_components,output_dims)).astype(np.float32)
 			init_log_stddev=np.zeros((output_dims)).astype(np.float32)
 		

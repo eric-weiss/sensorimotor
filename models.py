@@ -109,12 +109,13 @@ class MixedLinearGaussian():
 		
 		if params_fn==None:
 			init_centers=np.random.randn(n_components,input_dims).astype(np.float32)
-			init_biases=np.zeros((n_components)).astype(np.float32)
-			init_spreads=np.tile(np.eye(input_dims),(n_components,1,1)).astype(np.float32)
+			init_biases=(np.zeros((n_components))-1.0).astype(np.float32)
+			init_spreads=np.tile(0.1*np.eye(input_dims),(n_components,1,1)).astype(np.float32)
 			#init_Ms=np.tile(np.zeros((input_dims,output_dims)),(n_components,1,1)).astype(np.float32)
-			init_Ms=(np.random.randn(n_components,input_dims,output_dims)*3).astype(np.float32)
+			init_Ms=np.random.randn(n_components,input_dims,output_dims).astype(np.float32)
 			init_bs=np.zeros((n_components,output_dims)).astype(np.float32)
-			init_log_stddev=np.zeros((output_dims)).astype(np.float32)
+			#init_bs=(np.random.randn(n_components,output_dims)*1).astype(np.float32)
+			init_log_stddev=(np.zeros((output_dims))-0.0).astype(np.float32)
 		
 		self.centers=theano.shared(init_centers)
 		self.biases=theano.shared(init_biases)
@@ -212,17 +213,10 @@ class MixedLinearGaussian():
 		return quadratic_terms + Z_terms
 	
 
+m=LinearGaussian(3,3)
 
-s=T.fmatrix()
-y=T.fmatrix()
-model=MixedLinearGaussian(3,5,7)
-out=model.rel_log_prob(s,T.addbroadcast(y,0),all_pairs=False,include_params_in_Z=True)
+a={m.params[0]: 'first'}
 
-test=theano.function([s,y],out,allow_input_downcast=True)
+print a[m.params[0]]
 
-a=np.random.randn(8,3)
-b=np.random.randn(1,5)
-
-c=test(a,b)
-
-print c.shape
+print m

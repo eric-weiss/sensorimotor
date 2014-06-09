@@ -13,7 +13,7 @@ class SGD_Momentum_Learner():
 	momentum.
 	'''
 	
-	def __init__(self, params, loss, init_momentum_coeffs=[0.9], init_lrates=[1e-3], lrate_decay=1.0):
+	def __init__(self, params, loss, init_momentum_coeffs=[0.5], init_lrates=[1e-3], lrate_decay=1.0):
 		''' 
 		params: A list of parameters. They should be used to compute loss.
 		
@@ -38,13 +38,13 @@ class SGD_Momentum_Learner():
 		self.loss=loss
 		
 		if len(init_momentum_coeffs)==1:
-			init_momentum_coeffs=(init_momentum_coeffs[0]*np.ones(self.n_params)).astype(np.float32)
+			init_momentum_coeffs=init_momentum_coeffs[0]*np.ones(self.n_params)
 		
 		if len(init_lrates)==1:
-			init_lrates=(init_lrates[0]*np.ones(self.n_params)).astype(np.float32)
+			init_lrates=init_lrates[0]*np.ones(self.n_params)
 		
-		self.momentum_coeffs=init_momentum_coeffs
-		self.lrates=init_lrates
+		self.momentum_coeffs=init_momentum_coeffs.astype(np.float32)
+		self.lrates=init_lrates.astype(np.float32)
 		
 		#the momentums for each parameter in self.params are stored as a list
 		self.momentums=[]

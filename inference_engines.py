@@ -11,7 +11,7 @@ class ParticleFilter():
 	''' Implements particle filtering and smoothing for Markov Chains
 	 with arbitrary proposal/true distributions '''
 	
-	def __init__(self, data_dims, state_dims, n_particles, n_history=1):
+	def __init__(self, data_dims, state_dims, n_particles, observation_input=None, n_history=1):
 		
 		self.data_dims=data_dims
 		self.state_dims=state_dims
@@ -57,7 +57,7 @@ class ParticleFilter():
 		self.resample=None
 		self.sample_joint=None
 		
-		
+		self.observation_input=observation_input
 		
 		ess=self.compute_ESS()
 		self.get_ESS=theano.function([],ess)
@@ -69,9 +69,8 @@ class ParticleFilter():
 		'''This function compiles each of the theano functions that might
 		change following a change of the model. '''
 		
-		data=T.fvector()
-		samp_updates=self.sample_update(data)
-		self.perform_inference=theano.function([data],updates=samp_updates,allow_input_downcast=True)
+		samp_updates=self.sample_update(self.observation_input)
+		self.perform_inference=theano.function([],updates=samp_updates)
 		
 		res_updates=self.resample_update()
 		self.resample=theano.function([],updates=res_updates)
@@ -175,7 +174,20 @@ class ParticleFilter():
 											non_sequences=[n_samples],
 											n_steps=self.n_history)
 		
+		#the variable "samples" that results from the scan is time-flipped
+		#in the sense that samples[0] corresponds to the most recent point
+		#in time, and higher indices correspond to points in the past.
+		#I will stick to the convention that for any collection of points in 
+		#time, [-1] will index the most recent time, and [0] will index
+		#the point farthest in the past. So, the first axis of "samples" 
+		#needs to be flipped.
+		flip_idxs=T.cast(-T.arange(self.n_history)+self.n_history-1,'int64')
+		samples=T.concatenate([samples[flip_idxs], samps_t0.dimshuffle('x',0,1)], axis=0)
+		
 		return samples, updates
+	
+	
+	
 
 
 

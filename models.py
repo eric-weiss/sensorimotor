@@ -211,12 +211,4 @@ class MixedLinearGaussian():
 				Z_terms=0
 		
 		return quadratic_terms + Z_terms
-	
 
-m=LinearGaussian(3,3)
-
-a={m.params[0]: 'first'}
-
-print a[m.params[0]]
-
-print m

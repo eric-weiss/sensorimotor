@@ -14,21 +14,21 @@ from inference_engines import ParticleFilter
 
 statedims=2
 datadims=40
-nparticles=100
+nparticles=4000
 
 PF=ParticleFilter(datadims, statedims, nparticles, n_history=100)
 
 genproc=Lmodel(statedims, datadims)
 tranproc=Lmodel(statedims, statedims)
 
-nt=160000
+nt=150
 
 theta=0.1
 trueM=np.asarray([[np.cos(theta), -np.sin(theta)],[np.sin(theta), np.cos(theta)]],dtype='float32')
 trueG=(np.random.randn(statedims,datadims)*0.5).astype(np.float32)
 tranproc.M.set_value(trueM)
 genproc.M.set_value(trueG)
-tranproc.log_stddev.set_value((np.ones(statedims)*-2.0).astype(np.float32))
+tranproc.log_stddev.set_value((np.ones(statedims)*-4.0).astype(np.float32))
 
 s=[np.asarray([0,1])]
 for i in range(nt):
@@ -93,31 +93,31 @@ for i in range(nt):
 	PF.perform_inference(xsamps[i])
 	ess=PF.get_ESS()
 	esshist.append(ess)
-	if ess<nparticles/2:
+	if ess<nparticles/8:
 		PF.resample()
 	statehist.append(getstates())
 	weighthist.append(getweights())
 
 print time.time()-t0
 esshist=np.asarray(esshist)
-statehist=np.asarray(statehist[-100:])
-weighthist=np.asarray(weighthist[-100:])
-jointsamples=np.asarray(PF.sample_joint(100))
+statehist=np.asarray(statehist)
+weighthist=np.asarray(weighthist)
+jointsamples=np.asarray(PF.sample_joint(1000))
 meanjoint=np.mean(jointsamples,axis=1)
 #meanjoint=np.reshape(jointsamples, (jointsamples.shape[0], 200))
 
 meanstates=np.sum(statehist*np.reshape(weighthist, (statehist.shape[0], nparticles, 1)), axis=1)
 
-#pp.plot(esshist[-1000:])
-#pp.figure(2)
-#pp.plot(meanstates[-1000:])
-#pp.plot(s[-1000:])
-#pp.figure(3)
-#pp.plot(meanjoint)
-#pp.plot(s[-100:])
-print s[-1]
-pp.scatter(statehist[-1,:,0],weighthist[-1],c='r')
-pp.scatter(statehist[-1,:,1],weighthist[-1],c='b')
+pp.plot(esshist)
+pp.figure(2)
+pp.plot(meanstates[-101:])
+pp.plot(s[-101:])
+pp.figure(3)
+pp.plot(meanjoint)
+pp.plot(s[-101:])
+#print s[-1]
+#pp.scatter(statehist[-1,:,0],weighthist[-1],c='r')
+#pp.scatter(statehist[-1,:,1],weighthist[-1],c='b')
 
 pp.show()
 

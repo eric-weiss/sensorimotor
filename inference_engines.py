@@ -11,10 +11,12 @@ class ParticleFilter():
 	''' Implements particle filtering and smoothing for Markov Chains
 	 with arbitrary proposal/true distributions '''
 	
-	def __init__(self, data_dims, state_dims, n_particles, observation_input=None, n_history=1):
+	def __init__(self, transition_model, observation_model, n_particles, observation_input=None, n_history=1):
 		
-		self.data_dims=data_dims
-		self.state_dims=state_dims
+		self.transition_model=transition_model
+		self.observation_model=observation_model
+		self.data_dims=observation_model.output_dims
+		self.state_dims=transition_model.output_dims
 		self.n_particles=n_particles
 		self.n_history=n_history
 		
@@ -24,16 +26,7 @@ class ParticleFilter():
 		
 		self.theano_rng=RandomStreams()
 		
-		#self.particle_history=[]
-		#self.weight_history=[]
-		
-		#for i in range(n_history+1):
-			#init_particles=np.zeros((n_particles, state_dims)).astype(np.float32)
-			#init_weights=(np.ones(n_particles)/float(n_particles)).astype(np.float32)
-			#particle_history.append(theano.shared(init_particles))
-			#weight_history.append(theano.shared(init_weights))
-		
-		init_particles=np.zeros((n_history+1, n_particles, state_dims)).astype(np.float32)
+		init_particles=np.zeros((n_history+1, n_particles, self.state_dims)).astype(np.float32)
 		init_weights=(np.ones((n_history+1, n_particles))/float(n_particles)).astype(np.float32)
 		
 		self.particles=theano.shared(init_particles)
@@ -47,11 +40,10 @@ class ParticleFilter():
 		self.current_weights=self.weights[self.time_counter%(self.n_history+1)]
 		self.previous_weights=self.weights[(self.time_counter-1)%(self.n_history+1)]
 		
-		self.proposal_samples=None
-		self.log_proposal_probs=None
+		self.proposal_distrib=None
 		
-		self.true_log_transition_probs=None
-		self.true_log_observation_probs=None
+		self.true_log_transition_probs=self.transition_model.rel_log_prob
+		self.true_log_observation_probs=self.observation_model.rel_log_prob
 		
 		self.perform_inference=None
 		self.resample=None
@@ -62,8 +54,14 @@ class ParticleFilter():
 		ess=self.compute_ESS()
 		self.get_ESS=theano.function([],ess)
 		
+		n_samps=T.lscalar()
+		n_T=T.lscalar()
+		data_samples, data_sample_updates=self.sample_future_observations(n_samps,n_T)
+		self.sample_from_future=theano.function([n_samps, n_T],data_samples,updates=data_sample_updates)
 		
-	
+		self.get_current_particles=theano.function([],self.current_state)
+		self.get_current_weights=theano.function([],self.current_weights)
+		
 	
 	def recompile(self):
 		'''This function compiles each of the theano functions that might
@@ -82,10 +80,10 @@ class ParticleFilter():
 		return
 	
 	
-	def set_proposal(self, proposal_samples, log_proposal_probs):
+	def set_proposal(self, proposal_distrib):
 		
-		self.proposal_samples=proposal_samples
-		self.log_proposal_probs=log_proposal_probs
+		self.proposal_distrib=proposal_distrib
+		
 		return
 	
 	
@@ -103,8 +101,7 @@ class ParticleFilter():
 	
 	def sample_update(self, data):
 		
-		proposal_samples=self.proposal_samples
-		log_proposal_probs=self.log_proposal_probs
+		proposal_samples, log_proposal_probs=self.proposal_distrib
 		
 		log_transition_probs=self.true_log_transition_probs(self.current_state, proposal_samples)
 		
@@ -162,7 +159,12 @@ class ParticleFilter():
 	
 	
 	def sample_from_joint(self, n_samples):
+		'''Samples from the joint posterior P(s_t-n_history:s_t | observations)
+		n_samples: the number of samples to draw
 		
+		Returns an array with shape (n_history+1, n_samples, state_dims),
+		where array[-1] corresponds to the current time.
+		'''
 		samps=self.theano_rng.multinomial(pvals=T.extra_ops.repeat(self.current_weights.dimshuffle('x',0),n_samples,axis=0))
 		idxs=T.cast(T.dot(samps, T.arange(self.n_particles)),'int64')
 		samps_t0=self.current_state[idxs]
@@ -187,7 +189,27 @@ class ParticleFilter():
 		return samples, updates
 	
 	
-	
+	def sample_future_observations(self, n_samples, n_T):
+		'''Samples from the "future" data distribution P(x_t+1:x_t+n_T | s_t)
+		
+		n_samples: number of samples to draw
+		n_T: the number of (future) time points to sample from
+		
+		Returns an array with shape (n_T+1, n_samples, data_dims),
+		corresponding to samples of future observations.
+		'''
+		
+		samps=self.theano_rng.multinomial(pvals=T.extra_ops.repeat(self.current_weights.dimshuffle('x',0),n_samples,axis=0))
+		idxs=T.cast(T.dot(samps, T.arange(self.n_particles)),'int64')
+		samps_t0=self.current_state[idxs]
+		
+		state_samples, updates = theano.scan(fn=self.transition_model.get_samples_noprobs,
+											outputs_info=[samps_t0],
+											n_steps=n_T)
+		
+		data_samples=self.observation_model.get_samples_noprobs(state_samples)
+		
+		return data_samples, updates
 
 
 

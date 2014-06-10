@@ -38,11 +38,27 @@ class LinearGaussian():
 		return conditional_means
 	
 	
+	def get_samples_noprobs(self, input_states):
+		'''
+		input_state should be shape (n_particles, input_dims)
+		
+		returns samples
+		'''
+		
+		conditional_means=self.compute_conditional_means(input_states)
+		
+		n=self.theano_rng.normal(size=conditional_means.shape)
+		
+		samps=conditional_means + n*T.exp(self.log_stddev).dimshuffle('x',0)
+		
+		return samps
+	
+	
 	def get_samples(self, input_states):
 		'''
 		input_state should be shape (n_particles, input_dims)
 		
-		returns (samples, relative log probabilities under proposal distrib)
+		returns (samples, relative log probabilities)
 		'''
 		
 		conditional_means=self.compute_conditional_means(input_states)

@@ -13,7 +13,7 @@ class SGD_Momentum_Learner():
 	momentum.
 	'''
 	
-	def __init__(self, params, loss, init_momentum_coeffs=[0.5], init_lrates=[1e-3], lrate_decay=1.0):
+	def __init__(self, params, loss, init_momentum_coeffs=[0.98], init_lrates=[1e-3], lrate_decay=0.9995):
 		''' 
 		params: A list of parameters. They should be used to compute loss.
 		
@@ -32,7 +32,7 @@ class SGD_Momentum_Learner():
 			by this number.
 		'''
 		
-		self.lrate_decay=lrate_decay
+		self.lrate_decay=np.float32(lrate_decay)
 		self.n_params=len(params)
 		self.params=params
 		self.loss=loss
@@ -45,6 +45,8 @@ class SGD_Momentum_Learner():
 		
 		self.momentum_coeffs=init_momentum_coeffs.astype(np.float32)
 		self.lrates=init_lrates.astype(np.float32)
+		
+		self.global_lrate=theano.shared(np.float32(1.0))
 		
 		#the momentums for each parameter in self.params are stored as a list
 		self.momentums=[]
@@ -78,27 +80,24 @@ class SGD_Momentum_Learner():
 		#updates the momentums and parameter values
 		for param, gparam, momentum, lrate, momentum_coeff in zip(self.params, gparams, self.momentums, self.lrates, self.momentum_coeffs):
 			
-			new_momentum=momentum_coeff*momentum - lrate*gparam
+			new_momentum=momentum_coeff*momentum - lrate*gparam*self.global_lrate
 			new_param=param + new_momentum
 			
 			updates[param]=new_param
 			updates[momentum]=new_momentum
+		
+		updates[self.global_lrate]=self.global_lrate*self.lrate_decay
 		
 		return updates
 	
 	
 	def get_current_loss(self):
 		
-		'''This returns the current loss. It also adds an 
-		entry in self.loss_history in case the current loss has not yet
-		been recorded.
+		'''This computes and returns the current loss.
 		'''
-		if self.n_learning_iterations==self.loss_history[-1][0]:
-			return self.loss_history[-1][1]
-		else:
-			current_loss=self.compute_loss()
-			self.loss_history.append([self.n_learning_iterations, current_loss])
-			return current_loss
+		current_loss=self.compute_loss()
+		self.loss_history.append([self.n_learning_iterations, current_loss])
+		return current_loss
 	
 	
 	def perform_learning_step(self):

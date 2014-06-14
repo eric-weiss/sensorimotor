@@ -12,12 +12,12 @@ from inference_engines import ParticleFilter
 from learning_algs import SGD_Momentum_Learner as SGDLearner
 
 statedims=2
-datadims=10
+datadims=20
 nparticles=400
 
 n_joint_samples=20
 
-nt=80000
+nt=120000
 
 #======Making data=======================
 antisym=np.tril(np.ones((statedims, statedims)),k=-1); antisym=antisym-antisym.T
@@ -53,7 +53,7 @@ PF=ParticleFilter(tranproc, genproc, nparticles, n_history=1, observation_input=
 
 
 tranproc.M.set_value(np.eye(statedims).astype(np.float32))
-tranproc.log_stddev.set_value((np.ones(statedims)*-2.0).astype(np.float32))
+tranproc.log_stddev.set_value((np.ones(statedims)*-1.0).astype(np.float32))
 
 prop_distrib = tranproc.get_samples(PF.current_state)
 
@@ -65,7 +65,7 @@ PF.set_proposal(prop_distrib)
 PF.recompile()
 
 #total_params=tranproc.params + genproc.params
-total_params=[tranproc.M, genproc.M, tranproc.log_stddev, genproc.log_stddev]
+total_params=[tranproc.M, genproc.M, genproc.log_stddev]
 
 obs=T.fvector()
 shared_joint_samples=theano.shared(np.zeros((2, n_joint_samples, statedims)).astype(np.float32))
@@ -81,7 +81,7 @@ total_loss=-(tranloss+genloss)
 lrates=np.asarray([1.0, 1.0])*1e-0
 
 #learner=SGDLearner(total_params, total_loss, init_lrates=lrates)
-learner=SGDLearner(total_params, total_loss, init_lrates=[2e-5])
+learner=SGDLearner(total_params, total_loss, init_lrates=[1e-5])
 
 
 
@@ -91,25 +91,31 @@ esshist=[]
 t0=time.time()
 statehist=[]
 weighthist=[]
-learn_every=10
+esshist=[]
+min_learn_delay=20
+learn_counter=0
 for i in range(nt-1000):
 	PF.perform_inference()
 	ess=PF.get_ESS()
 	esshist.append(ess)
 	statehist.append(PF.get_current_particles())
 	weighthist.append(PF.get_current_weights())
+	esshist.append(ess)
 	
-	if (i+1)%learn_every==0:
+	if learn_counter>min_learn_delay:# and ess>nparticles/32:
 		perform_joint_sampling()
 		loss0=learner.get_current_loss()
 		learner.perform_learning_step()
-		loss1=learner.get_current_loss()
-		print loss1-loss0
+		#loss1=learner.get_current_loss()
+		learn_counter=0
+		print loss0
 	
 	if ess<nparticles/2:
 		PF.resample()
 	
 	increment_t()
+	
+	learn_counter+=1
 
 print tranproc.M.get_value()
 print trueM
@@ -122,6 +128,7 @@ futuremeans=np.mean(futuresamps,axis=1)
 
 statehist=np.asarray(statehist,dtype='float32')
 weighthist=np.asarray(weighthist,dtype='float32')
+esshist=np.asarray(esshist,dtype='float32')
 
 meanstate=np.sum(statehist*np.reshape(weighthist,(statehist.shape[0],statehist.shape[1],1)),axis=1)
 
@@ -132,4 +139,6 @@ pp.plot(futuremeans)
 pp.plot(observations[-1000:])
 pp.figure(3)
 pp.plot(meanstate)
+pp.figure(4)
+pp.plot(esshist)
 pp.show()

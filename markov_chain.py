@@ -13,9 +13,9 @@ from learning_algs import SGD_Momentum_Learner as SGDLearner
 
 statedims=2
 datadims=20
-nparticles=400
+nparticles=200
 
-n_joint_samples=20
+n_joint_samples=10
 
 nt=120000
 
@@ -23,8 +23,8 @@ nt=120000
 antisym=np.tril(np.ones((statedims, statedims)),k=-1); antisym=antisym-antisym.T
 trueM=np.eye(statedims,k=1)*8e-2
 trueM=trueM+trueM.T; trueM=trueM*antisym+np.eye(statedims)
-trueG=np.random.randn(statedims,datadims)*4.0
-true_log_stddev=np.random.randn(statedims)-10.0
+trueG=np.sin(np.reshape(np.arange(statedims*datadims),(statedims,datadims))*10.0)
+true_log_stddev=np.zeros(statedims)-10.0
 
 s0=np.zeros(statedims); s0[0]=1.0; s0=s0.astype(np.float32)
 true_s=[s0]
@@ -37,8 +37,8 @@ observations=np.dot(true_s,trueG)+np.random.randn(true_s.shape[0],datadims)*np.e
 
 #pp.plot(true_s)
 #pp.figure(2)
-#pp.plot(observations)
-#pp.show()
+pp.plot(observations)
+pp.show()
 
 shared_obs=theano.shared(observations.astype(np.float32))
 shared_t=theano.shared(0)
@@ -65,7 +65,7 @@ PF.set_proposal(prop_distrib)
 PF.recompile()
 
 #total_params=tranproc.params + genproc.params
-total_params=[tranproc.M, genproc.M, genproc.log_stddev]
+total_params=[tranproc.M, genproc.M, genproc.log_stddev, tranproc.log_stddev]
 
 obs=T.fvector()
 shared_joint_samples=theano.shared(np.zeros((2, n_joint_samples, statedims)).astype(np.float32))
@@ -92,7 +92,7 @@ t0=time.time()
 statehist=[]
 weighthist=[]
 esshist=[]
-min_learn_delay=20
+min_learn_delay=10
 learn_counter=0
 for i in range(nt-1000):
 	PF.perform_inference()
@@ -110,7 +110,7 @@ for i in range(nt-1000):
 		learn_counter=0
 		print loss0
 	
-	if ess<nparticles/2:
+	if ess<nparticles*0.75:
 		PF.resample()
 	
 	increment_t()
@@ -135,8 +135,8 @@ meanstate=np.sum(statehist*np.reshape(weighthist,(statehist.shape[0],statehist.s
 losshist=np.asarray(learner.loss_history)
 pp.plot(losshist[:,1])
 pp.figure(2)
-pp.plot(futuremeans)
-pp.plot(observations[-1000:])
+pp.plot(futuremeans,'r')
+pp.plot(observations[-1000:],'b')
 pp.figure(3)
 pp.plot(meanstate)
 pp.figure(4)

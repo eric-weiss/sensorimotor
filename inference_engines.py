@@ -56,8 +56,8 @@ class ParticleFilter():
 		
 		n_samps=T.lscalar()
 		n_T=T.lscalar()
-		data_samples, data_sample_updates=self.sample_future_observations(n_samps,n_T)
-		self.sample_from_future=theano.function([n_samps, n_T],data_samples,updates=data_sample_updates)
+		data_samples, state_samples, data_sample_updates=self.sample_future_observations(n_samps,n_T)
+		self.sample_from_future=theano.function([n_samps, n_T],[data_samples,state_samples],updates=data_sample_updates)
 		
 		self.get_current_particles=theano.function([],self.current_state)
 		self.get_current_weights=theano.function([],self.current_weights)
@@ -189,14 +189,20 @@ class ParticleFilter():
 		return samples, updates
 	
 	
-	def sample_future_observations(self, n_samples, n_T):
-		'''Samples from the "future" data distribution P(x_t+1:x_t+n_T | s_t)
+	def sample_future(self, n_samples, n_T):
+		'''Samples from the "future" data distribution: 
+				P(s_t+1,...s_t+n_T, x_t+1,...x_t+n_T | s_t)
 		
 		n_samples: number of samples to draw
 		n_T: the number of (future) time points to sample from
 		
-		Returns an array with shape (n_T+1, n_samples, data_dims),
-		corresponding to samples of future observations.
+		Returns three arrays. The first two have shapes 
+		(n_T, n_samples, data_dims) and
+		(n_T, n_samples, state_dims),
+		corresponding to samples of future observations and states,
+		and the third having size (n_samples,state_dims),
+		corresponding to the "initial" samples taken from the current
+		state distribution.
 		'''
 		
 		samps=self.theano_rng.multinomial(pvals=T.extra_ops.repeat(self.current_weights.dimshuffle('x',0),n_samples,axis=0))
@@ -207,9 +213,9 @@ class ParticleFilter():
 											outputs_info=[samps_t0],
 											n_steps=n_T)
 		
-		data_samples=self.observation_model.get_samples_noprobs(state_samples)
+		data_samples=self.observation_model.get_samples_noprobs(state_samples[1:])
 		
-		return data_samples, updates
+		return data_samples, state_samples[1:], state_samples[0], updates
 
 
 

@@ -49,20 +49,21 @@ increment_t=theano.function([],updates={shared_t: shared_t+1})
 genproc=Lmodel(statedims, datadims)
 tranproc=Lmodel(statedims, statedims)
 
+proposal_model=Lmodel(statedims+datadims,statedims)
+
 PF=ParticleFilter(tranproc, genproc, nparticles, n_history=1, observation_input=current_observation)
 
 
 tranproc.M.set_value(np.eye(statedims).astype(np.float32))
 tranproc.log_stddev.set_value((np.ones(statedims)*-1.0).astype(np.float32))
 
-prop_distrib = tranproc.get_samples(PF.current_state)
+prop_distrib = proposal_model.get_samples(T.concatenate(
+		[PF.current_state, T.extra_ops.repeat(current_observation.dimshuffle('x',0),nparticles,axis=0)]))
 
 PF.set_proposal(prop_distrib)
-
-#PF.set_true_log_observation_probs(genproc.rel_log_prob)
-#PF.set_true_log_transition_probs(tranproc.rel_log_prob)
-
 PF.recompile()
+
+future_model_data, future_model_states, future_updates=PF.sample_future(100,1)
 
 #total_params=tranproc.params + genproc.params
 total_params=[tranproc.M, genproc.M, genproc.log_stddev, tranproc.log_stddev]
@@ -123,7 +124,7 @@ print tranproc.log_stddev.get_value()
 print true_log_stddev
 print genproc.log_stddev.get_value()
 
-futuresamps=PF.sample_from_future(100,1000)
+futuresamps,futurestates=PF.sample_from_future(100,1000)
 futuremeans=np.mean(futuresamps,axis=1)
 
 statehist=np.asarray(statehist,dtype='float32')

@@ -17,7 +17,7 @@ nparticles=200
 
 n_joint_samples=10
 
-nt=120000
+nt=1200
 
 #======Making data=======================
 antisym=np.tril(np.ones((statedims, statedims)),k=-1); antisym=antisym-antisym.T
@@ -63,7 +63,12 @@ prop_distrib = proposal_model.get_samples(T.concatenate(
 PF.set_proposal(prop_distrib)
 PF.recompile()
 
-future_model_data, future_model_states, future_updates=PF.sample_future(100,1)
+future_model_data, future_model_states, future_init_states, future_updates=PF.sample_future(100,1)
+
+proposal_loss=T.mean(proposal_model.rel_log_prob(T.concatenate([future_init_states,future_model_data[0]],axis=0),
+			future_model_states[0],include_params_in_Z=True))
+
+proposal_learner=SGDLearner(proposal_model.params,proposal_loss,init_lrates=[1e-5])
 
 #total_params=tranproc.params + genproc.params
 total_params=[tranproc.M, genproc.M, genproc.log_stddev, tranproc.log_stddev]
@@ -85,8 +90,6 @@ lrates=np.asarray([1.0, 1.0])*1e-0
 learner=SGDLearner(total_params, total_loss, init_lrates=[1e-5])
 
 
-
-
 print 'Done compiling, beginning training'
 esshist=[]
 t0=time.time()
@@ -102,6 +105,7 @@ for i in range(nt-1000):
 	statehist.append(PF.get_current_particles())
 	weighthist.append(PF.get_current_weights())
 	esshist.append(ess)
+	proposal_learner.perform_learning_step()
 	
 	if learn_counter>min_learn_delay:# and ess>nparticles/32:
 		perform_joint_sampling()

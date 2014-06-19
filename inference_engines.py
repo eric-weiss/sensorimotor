@@ -56,8 +56,8 @@ class ParticleFilter():
 		
 		n_samps=T.lscalar()
 		n_T=T.lscalar()
-		data_samples, state_samples, data_sample_updates=self.sample_future_observations(n_samps,n_T)
-		self.sample_from_future=theano.function([n_samps, n_T],[data_samples,state_samples],updates=data_sample_updates)
+		data_samples, state_samples, init_state_samples, data_sample_updates=self.sample_future(n_samps,n_T)
+		self.sample_from_future=theano.function([n_samps, n_T],[data_samples,state_samples,init_state_samples],updates=data_sample_updates)
 		
 		self.get_current_particles=theano.function([],self.current_state)
 		self.get_current_weights=theano.function([],self.current_weights)
@@ -211,11 +211,11 @@ class ParticleFilter():
 		
 		state_samples, updates = theano.scan(fn=self.transition_model.get_samples_noprobs,
 											outputs_info=[samps_t0],
-											n_steps=n_T)
+											n_steps=n_T+1)
 		
-		data_samples=self.observation_model.get_samples_noprobs(state_samples[1:])
+		data_samples=self.observation_model.get_samples_noprobs(state_samples)
 		
-		return data_samples, state_samples[1:], state_samples[0], updates
+		return data_samples, state_samples, samps_t0, updates
 
 
 

@@ -26,7 +26,8 @@ class ParticleFilter():
 		
 		self.theano_rng=RandomStreams()
 		
-		init_particles=np.zeros((n_history+1, n_particles, self.state_dims)).astype(np.float32)
+		#init_particles=np.zeros((n_history+1, n_particles, self.state_dims)).astype(np.float32)
+		init_particles=np.random.randn(n_history+1, n_particles, self.state_dims).astype(np.float32)
 		init_weights=(np.ones((n_history+1, n_particles))/float(n_particles)).astype(np.float32)
 		
 		self.particles=theano.shared(init_particles)
@@ -216,6 +217,35 @@ class ParticleFilter():
 		data_samples=self.observation_model.get_samples_noprobs(state_samples)
 		
 		return data_samples, state_samples, samps_t0, updates
+	
+	
+	def sample_model(self, n_samples, n_T):
+		'''Samples from the "future" data distribution: 
+				P(s_t+1,...s_t+n_T, x_t+1,...x_t+n_T | s_t)
+		
+		n_samples: number of samples to draw
+		n_T: the number of (future) time points to sample from
+		
+		Returns three arrays. The first two have shapes 
+		(n_T, n_samples, data_dims) and
+		(n_T, n_samples, state_dims),
+		corresponding to samples of future observations and states,
+		and the third having size (n_samples,state_dims),
+		corresponding to the "initial" samples taken from the current
+		state distribution.
+		'''
+		
+		samps=self.theano_rng.multinomial(pvals=T.extra_ops.repeat(self.current_weights.dimshuffle('x',0),n_samples,axis=0))
+		idxs=T.cast(T.dot(samps, T.arange(self.n_particles)),'int64')
+		samps_t0=self.current_state[idxs]
+		
+		state_samples, updates = theano.scan(fn=self.transition_model.get_samples_noprobs,
+											outputs_info=[samps_t0],
+											n_steps=n_T)
+		
+		data_sample=self.observation_model.get_samples_noprobs(state_samples[-1])
+		
+		return data_sample, state_samples[-1], state_samples[-2], updates
 
 
 

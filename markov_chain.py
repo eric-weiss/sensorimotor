@@ -17,7 +17,7 @@ nparticles=200
 
 n_joint_samples=10
 
-nt=1200
+nt=40000
 
 #======Making data=======================
 antisym=np.tril(np.ones((statedims, statedims)),k=-1); antisym=antisym-antisym.T
@@ -58,15 +58,20 @@ tranproc.M.set_value(np.eye(statedims).astype(np.float32))
 tranproc.log_stddev.set_value((np.ones(statedims)*-1.0).astype(np.float32))
 
 prop_distrib = proposal_model.get_samples(T.concatenate(
-		[PF.current_state, T.extra_ops.repeat(current_observation.dimshuffle('x',0),nparticles,axis=0)]))
+		[PF.current_state, T.extra_ops.repeat(current_observation.dimshuffle('x',0),nparticles,axis=0)],axis=1))
 
 PF.set_proposal(prop_distrib)
 PF.recompile()
 
-future_model_data, future_model_states, future_init_states, future_updates=PF.sample_future(100,1)
+#future_model_data, future_model_states, future_init_states, future_updates=PF.sample_future(69,1)
 
-proposal_loss=T.mean(proposal_model.rel_log_prob(T.concatenate([future_init_states,future_model_data[0]],axis=0),
-			future_model_states[0],include_params_in_Z=True))
+#proposal_loss=-T.mean(proposal_model.rel_log_prob(T.concatenate([future_init_states,future_model_data[0]],axis=1),
+			#future_model_states[0],include_params_in_Z=True))
+
+future_data, future_s_t1, future_s_t0, future_updates=PF.sample_model(69,10)
+
+proposal_loss=-T.mean(proposal_model.rel_log_prob(T.concatenate([future_s_t0,future_data],axis=1),
+			future_s_t1,include_params_in_Z=True))
 
 proposal_learner=SGDLearner(proposal_model.params,proposal_loss,init_lrates=[1e-5])
 
@@ -89,6 +94,10 @@ lrates=np.asarray([1.0, 1.0])*1e-0
 #learner=SGDLearner(total_params, total_loss, init_lrates=lrates)
 learner=SGDLearner(total_params, total_loss, init_lrates=[1e-5])
 
+for i in range(10000):
+	if i%100==0:
+		print proposal_learner.get_current_loss()
+	proposal_learner.perform_learning_step()
 
 print 'Done compiling, beginning training'
 esshist=[]
@@ -105,7 +114,7 @@ for i in range(nt-1000):
 	statehist.append(PF.get_current_particles())
 	weighthist.append(PF.get_current_weights())
 	esshist.append(ess)
-	proposal_learner.perform_learning_step()
+	
 	
 	if learn_counter>min_learn_delay:# and ess>nparticles/32:
 		perform_joint_sampling()
@@ -113,7 +122,9 @@ for i in range(nt-1000):
 		learner.perform_learning_step()
 		#loss1=learner.get_current_loss()
 		learn_counter=0
-		print loss0
+		for j in range(10):
+			proposal_learner.perform_learning_step()
+		print 'Loss: ', loss0, '  Proploss: ', proposal_learner.get_current_loss()
 	
 	if ess<nparticles*0.75:
 		PF.resample()
@@ -128,7 +139,7 @@ print tranproc.log_stddev.get_value()
 print true_log_stddev
 print genproc.log_stddev.get_value()
 
-futuresamps,futurestates=PF.sample_from_future(100,1000)
+futuresamps,futurestates,futureinit=PF.sample_from_future(100,1000)
 futuremeans=np.mean(futuresamps,axis=1)
 
 statehist=np.asarray(statehist,dtype='float32')

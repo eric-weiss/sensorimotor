@@ -211,7 +211,7 @@ class ParticleFilter():
 		
 		state_samples, updates = theano.scan(fn=self.transition_model.get_samples_noprobs,
 											outputs_info=[samps_t0],
-											n_steps=n_T+1)
+											n_steps=n_T)
 		
 		data_samples=self.observation_model.get_samples_noprobs(state_samples)
 		

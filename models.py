@@ -20,9 +20,9 @@ class LinearGaussian():
 			init_b=np.zeros(output_dims).astype(np.float32)
 			init_log_stddev=np.zeros(output_dims).astype(np.float32)
 		
-		self.M=theano.shared(init_M)
-		self.b=theano.shared(init_b)
-		self.log_stddev=theano.shared(init_log_stddev)
+		self.M=theano.shared(init_M,name='M')
+		self.b=theano.shared(init_b,name='b')
+		self.log_stddev=theano.shared(init_log_stddev,name='log_stddev')
 		
 		self.params=[self.M, self.b, self.log_stddev]
 	

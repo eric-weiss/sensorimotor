@@ -13,7 +13,7 @@ class SGD_Momentum_Learner():
 	momentum.
 	'''
 	
-	def __init__(self, params, loss, init_momentum_coeffs=[0.99], init_lrates=[1e-3], lrate_decay=0.9998):
+	def __init__(self, params, loss, init_momentum_coeffs=[0.99], init_lrates=[1e-3], lrate_decay=0.99999):
 		''' 
 		params: A list of parameters. They should be used to compute loss.
 		
@@ -78,16 +78,27 @@ class SGD_Momentum_Learner():
 		
 		updates=OrderedDict()
 		#updates the momentums and parameter values
+		i=0
 		for param, gparam, momentum, lrate, momentum_coeff in zip(self.params, gparams, self.momentums, self.lrates, self.momentum_coeffs):
 			
 			#if param.ndim==2:
 			#	gparam=T.dot(T.dot(param,param.T),gparam)
+			
+			if param.name=='log_stddev':
+				gparam=gparam*2.0*T.exp(2.0*param)
+			
+			if param.name=='M':
+				gparam=gparam*T.exp(1.0*self.params[i+2]).dimshuffle('x',0)
+			
+			if param.name=='b':
+				gparam=gparam*T.exp(1.0*self.params[i+1])
 			
 			new_momentum=momentum_coeff*momentum - lrate*gparam*self.global_lrate
 			new_param=param + new_momentum
 			
 			updates[param]=new_param
 			updates[momentum]=new_momentum
+			i+=1
 		
 		updates[self.global_lrate]=self.global_lrate*self.lrate_decay
 		

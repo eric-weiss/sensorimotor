@@ -17,13 +17,13 @@ nparticles=100
 
 n_joint_samples=10
 
-nt=40000
+nt=10000
 
 #======Making data=======================
 antisym=np.tril(np.ones((statedims, statedims)),k=-1); antisym=antisym-antisym.T
 trueM=np.eye(statedims,k=1)*8e-2
 trueM=trueM+trueM.T; trueM=trueM*antisym+np.eye(statedims)
-trueG=np.sin(np.reshape(np.arange(statedims*datadims),(statedims,datadims))*10.0)
+trueG=np.sin(np.reshape(np.arange(statedims*datadims),(statedims,datadims))*10.0)*2.0
 trueG[0,:10]=0.0
 trueG[1,10:]=0.0
 #trueG=np.sin(np.random.rand(statedims,datadims)*200001.0)
@@ -92,7 +92,7 @@ update_model_samples=theano.function([],[],updates=future_updates)
 proposal_loss=-T.mean(proposal_model.rel_log_prob(T.concatenate([future_st0_shared,future_data_shared],axis=1),
 			future_st1_shared,include_params_in_Z=True))
 
-proposal_learner=SGDLearner(proposal_model.params,proposal_loss,init_lrates=[1e-4],init_momentum_coeffs=[0.99])
+proposal_learner=SGDLearner(proposal_model.params,proposal_loss,init_lrates=[2e-5],init_momentum_coeffs=[0.99])
 
 W=genproc.M.get_value()
 sigx=np.exp(-2.0*genproc.log_stddev.get_value()).reshape((datadims,1))
@@ -118,7 +118,7 @@ total_loss=-(tranloss+genloss)
 lrates=np.asarray([1.0, 1.0])*1e-0
 
 #learner=SGDLearner(total_params, total_loss, init_lrates=lrates)
-learner=SGDLearner(total_params, total_loss, init_lrates=[1e-4])
+learner=SGDLearner(total_params, total_loss, init_lrates=[2e-4])
 
 for i in range(10000):
 	update_model_samples()
@@ -137,6 +137,7 @@ proplosshist=[]
 min_learn_delay=10
 learn_counter=0
 nan_occurred=False
+proposal_learner.global_lrate.set_value(np.float32(2.0))
 for i in range(nt-1000):
 	PF.perform_inference()
 	ess=PF.get_ESS()
@@ -155,7 +156,7 @@ for i in range(nt-1000):
 		learner.perform_learning_step()
 		#loss1=learner.get_current_loss()
 		learn_counter=0
-		for j in range(20):
+		for j in range(100):
 			update_model_samples()
 			proposal_learner.perform_learning_step()
 			proplosshist.append(proposal_learner.get_current_loss())

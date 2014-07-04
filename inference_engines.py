@@ -249,7 +249,79 @@ class ParticleFilter():
 
 
 
-
+class ImportanceSampler():
+	'''Implements importance sampling/resampling'''
+	
+	def __init__(self, ndims, n_particles, true_log_probs, proposal_func=None):
+		'''
+		true_log_probs: a function that returns the true relative log probabilities
+		proposal_func: a function that returns (samples, relative_log_probabilities)
+		n_particles: the number of particles to use
+		'''
+		self.true_log_probs=true_log_probs
+		self.proposal_func=proposal_func
+		self.n_particles=n_particles
+		self.ndims=ndims
+		
+		init_particles=np.zeros((n_particles, self.ndims))
+		init_weights=np.ones(n_particles)/float(n_particles)
+		
+		self.particles=theano.shared(init_particles.astype(np.float32))
+		self.weights=theano.shared(init_weights.astype(np.float32))
+		
+		self.theano_rng=RandomStreams()
+		
+		self.get_ESS=None
+		self.perform_resampling=None
+		self.perform_sampling=None
+	
+	
+	def set_proposal_func(self, proposal_func):
+		'''You might need to use this if you want to make the proposal
+		function depend on the current particles'''
+		self.proposal_func=proposal_func
+		return
+	
+	
+	def sample_reweight(self):
+		'''Samples new particles and reweights them'''
+		samples, prop_log_probs = self.proposal_func()
+		true_log_probs=self.true_log_probs(samples)
+		diffs=true_log_probs-prop_log_probs
+		weights_unnorm=T.exp(diffs)
+		weights=weights_unnorm/T.sum(weights_unnorm)
+		updates=OrderedDict()
+		updates[self.weights]=T.cast(weights,'float32')
+		updates[self.particles]=T.cast(samples,'float32')
+		return updates
+	
+	
+	def compute_ESS(self):
+		'''Returns the effective sample size'''
+		return 1.0/T.sum(self.weights**2)
+	
+	
+	def resample(self):
+		'''Resamples using the current weights'''
+		samps=self.theano_rng.multinomial(pvals=T.extra_ops.repeat(self.weights.dimshuffle('x',0),self.n_particles,axis=0))
+		idxs=T.cast(T.dot(samps, T.arange(self.n_particles)),'int64')
+		updates=OrderedDict()
+		updates[self.particles]=self.particles[idxs]
+		updates[self.weights]=T.cast(T.ones_like(self.weights)/float(self.n_particles),'float32')
+		return updates
+	
+	
+	def compile(self):
+		'''Compiles the ESS, resampling, and sampling functions'''
+		ess=self.compute_ESS()
+		self.get_ESS=theano.function([],ess)
+		resample_updates=self.resample()
+		self.perform_resampling=theano.function([],updates=resample_updates)
+		sample_updates=self.sample_reweight()
+		self.perform_sampling=theano.function([],updates=sample_updates)
+		return
+		
+		
 		
 	
 	

@@ -12,10 +12,10 @@ from inference_engines import ParticleFilter
 from learning_algs import SGD_Momentum_Learner as SGDLearner
 
 statedims=2
-datadims=20
+datadims=10
 nparticles=100
 
-n_joint_samples=10
+n_joint_samples=100
 
 nt=10000
 
@@ -24,8 +24,8 @@ antisym=np.tril(np.ones((statedims, statedims)),k=-1); antisym=antisym-antisym.T
 trueM=np.eye(statedims,k=1)*8e-2
 trueM=trueM+trueM.T; trueM=trueM*antisym+np.eye(statedims)
 trueG=np.sin(np.reshape(np.arange(statedims*datadims),(statedims,datadims))*10.0)*2.0
-trueG[0,:10]=0.0
-trueG[1,10:]=0.0
+trueG[0,:datadims/2]=0.0
+trueG[1,datadims/2:]=0.0
 #trueG=np.sin(np.random.rand(statedims,datadims)*200001.0)
 true_log_stddev=np.zeros(statedims)-10.0
 
@@ -75,7 +75,7 @@ PF.recompile()
 #proposal_loss=-T.mean(proposal_model.rel_log_prob(T.concatenate([future_init_states,future_model_data[0]],axis=1),
 			#future_model_states[0],include_params_in_Z=True))
 
-n_prop_samps=10
+n_prop_samps=100
 n_prop_T=30
 
 future_data, future_st1, future_st0, future_updates=PF.sample_model(n_prop_samps,n_prop_T)
@@ -92,7 +92,7 @@ update_model_samples=theano.function([],[],updates=future_updates)
 proposal_loss=-T.mean(proposal_model.rel_log_prob(T.concatenate([future_st0_shared,future_data_shared],axis=1),
 			future_st1_shared,include_params_in_Z=True))
 
-proposal_learner=SGDLearner(proposal_model.params,proposal_loss,init_lrates=[2e-5],init_momentum_coeffs=[0.99])
+proposal_learner=SGDLearner(proposal_model.params,proposal_loss,init_lrates=[1e-6],init_momentum_coeffs=[0.999])
 
 W=genproc.M.get_value()
 sigx=np.exp(-2.0*genproc.log_stddev.get_value()).reshape((datadims,1))
@@ -120,14 +120,18 @@ lrates=np.asarray([1.0, 1.0])*1e-0
 #learner=SGDLearner(total_params, total_loss, init_lrates=lrates)
 learner=SGDLearner(total_params, total_loss, init_lrates=[2e-4])
 
+losshist=[]
 for i in range(10000):
 	update_model_samples()
 	if i%100==0:
-		print proposal_learner.get_current_loss()
-		print np.mean(future_st1_shared.get_value()**2)
+		losshist.append(proposal_learner.get_current_loss())
+		print losshist[i]
 	for j in range(2):
 		proposal_learner.perform_learning_step()
-
+losshist=np.asarray(losshist)
+pp.plot(losshist)
+pp.show()
+exit()
 print 'Done compiling, beginning training'
 esshist=[]
 t0=time.time()

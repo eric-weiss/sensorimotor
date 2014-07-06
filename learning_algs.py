@@ -85,13 +85,13 @@ class SGD_Momentum_Learner():
 			#	gparam=T.dot(T.dot(param,param.T),gparam)
 			
 			if param.name=='log_stddev':
-				gparam=gparam*2.0*T.exp(2.0*param)
+				gparam=gparam*2.0*T.exp(4.0*param)
 			
 			if param.name=='M':
-				gparam=gparam*T.exp(1.0*self.params[i+2]).dimshuffle('x',0)
+				gparam=gparam*T.exp(2.0*self.params[i+2]).dimshuffle('x',0)
 			
 			if param.name=='b':
-				gparam=gparam*T.exp(1.0*self.params[i+1])
+				gparam=gparam*T.exp(2.0*self.params[i+1])
 			
 			new_momentum=momentum_coeff*momentum - lrate*gparam*self.global_lrate
 			new_param=param + new_momentum

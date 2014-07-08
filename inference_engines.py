@@ -159,7 +159,7 @@ class ParticleFilter():
 		return [output_samples, t+1]
 	
 	
-	def sample_from_joint(self, n_samples):
+	def sample_from_joint(self, n_samples, output_2D=False):
 		'''Samples from the joint posterior P(s_t-n_history:s_t | observations)
 		n_samples: the number of samples to draw
 		
@@ -186,6 +186,9 @@ class ParticleFilter():
 		#needs to be flipped.
 		flip_idxs=T.cast(-T.arange(self.n_history)+self.n_history-1,'int64')
 		samples=T.concatenate([samples[flip_idxs], samps_t0.dimshuffle('x',0,1)], axis=0)
+		
+		if output_2D:
+			samples=T.reshape(samples, ((self.n_history+1)*n_samples, self.state_dims))
 		
 		return samples, updates
 	

@@ -13,9 +13,10 @@ from learning_algs import SGD_Momentum_Learner as SGDLearner
 
 statedims=2
 datadims=10
-nparticles=100
+nparticles=1000
 
-n_joint_samples=100
+n_joint_samples=64
+n_history=10
 
 nt=10000
 
@@ -44,8 +45,9 @@ pp.plot(observations)
 pp.show()
 
 shared_obs=theano.shared(observations.astype(np.float32))
-shared_t=theano.shared(0)
+shared_t=theano.shared(n_history+2)
 current_observation=shared_obs[shared_t]
+learning_observations=shared_obs[shared_t-n_history:shared_t+1]
 increment_t=theano.function([],updates={shared_t: shared_t+1})
 #========================================
 
@@ -57,7 +59,7 @@ genproc.M.set_value((genproc.M.get_value()*trueG).astype(np.float32))
 proposal_model=Lmodel(statedims+datadims,statedims)
 
 
-PF=ParticleFilter(tranproc, genproc, nparticles, n_history=1, observation_input=current_observation)
+PF=ParticleFilter(tranproc, genproc, nparticles, n_history=n_history, observation_input=current_observation)
 
 
 tranproc.M.set_value(np.eye(statedims).astype(np.float32))
@@ -75,8 +77,8 @@ PF.recompile()
 #proposal_loss=-T.mean(proposal_model.rel_log_prob(T.concatenate([future_init_states,future_model_data[0]],axis=1),
 			#future_model_states[0],include_params_in_Z=True))
 
-n_prop_samps=100
-n_prop_T=30
+n_prop_samps=64
+n_prop_T=10
 
 future_data, future_st1, future_st0, future_updates=PF.sample_model(n_prop_samps,n_prop_T)
 
@@ -92,7 +94,7 @@ update_model_samples=theano.function([],[],updates=future_updates)
 proposal_loss=-T.mean(proposal_model.rel_log_prob(T.concatenate([future_st0_shared,future_data_shared],axis=1),
 			future_st1_shared,include_params_in_Z=True))
 
-proposal_learner=SGDLearner(proposal_model.params,proposal_loss,init_lrates=[1e-6],init_momentum_coeffs=[0.999])
+proposal_learner=SGDLearner(proposal_model.params,proposal_loss,init_lrates=[1e-6],init_momentum_coeffs=[0.99])
 
 W=genproc.M.get_value()
 sigx=np.exp(-2.0*genproc.log_stddev.get_value()).reshape((datadims,1))
@@ -104,44 +106,45 @@ init_prop_log_stddev=-0.5*np.log(np.diag(np.dot(W,sigx*W.T)+sigs*np.eye(statedim
 total_params=tranproc.params + genproc.params
 #total_params=[tranproc.M, genproc.M, genproc.log_stddev, tranproc.log_stddev]
 
-obs=T.fvector()
-shared_joint_samples=theano.shared(np.zeros((2, n_joint_samples, statedims)).astype(np.float32))
 
-joint_samples, joint_sample_updates=PF.sample_from_joint(n_joint_samples)
+obs=T.fvector()
+shared_joint_samples=theano.shared(np.zeros(((n_history+1)*n_joint_samples, statedims)).astype(np.float32))
+
+joint_samples, joint_sample_updates=PF.sample_from_joint(n_joint_samples,output_2D=True)
 joint_sample_updates[shared_joint_samples]=joint_samples
 perform_joint_sampling=theano.function([],updates=joint_sample_updates)
 
-tranloss=T.mean(tranproc.rel_log_prob(shared_joint_samples[0],shared_joint_samples[1],include_params_in_Z=True))
-genloss=T.mean(genproc.rel_log_prob(shared_joint_samples[1],current_observation.dimshuffle('x',0),include_params_in_Z=True))
+tranloss=T.mean(tranproc.rel_log_prob(shared_joint_samples[n_joint_samples:],shared_joint_samples[:-n_joint_samples],include_params_in_Z=True))
+genloss=T.mean(genproc.rel_log_prob(shared_joint_samples,T.extra_ops.repeat(learning_observations,n_joint_samples,axis=0),include_params_in_Z=True))
 total_loss=-(tranloss+genloss)
 #lrates=np.asarray([1.0, 0.0, 0.0, 1.0, 0.0, 0.0])*2e-4
 lrates=np.asarray([1.0, 1.0])*1e-0
 
 #learner=SGDLearner(total_params, total_loss, init_lrates=lrates)
-learner=SGDLearner(total_params, total_loss, init_lrates=[2e-4])
+learner=SGDLearner(total_params, total_loss, init_lrates=[1e-3])
 
 losshist=[]
-for i in range(10000):
+for i in range(20000):
 	update_model_samples()
+	losshist.append(proposal_learner.get_current_loss())
 	if i%100==0:
-		losshist.append(proposal_learner.get_current_loss())
 		print losshist[i]
 	for j in range(2):
 		proposal_learner.perform_learning_step()
 losshist=np.asarray(losshist)
-pp.plot(losshist)
-pp.show()
-exit()
+#pp.plot(losshist)
+#pp.show()
+
 print 'Done compiling, beginning training'
 esshist=[]
 t0=time.time()
 statehist=[]
 weighthist=[]
 proplosshist=[]
-min_learn_delay=10
+min_learn_delay=20
 learn_counter=0
 nan_occurred=False
-proposal_learner.global_lrate.set_value(np.float32(2.0))
+proposal_learner.global_lrate.set_value(np.float32(200.0))
 for i in range(nt-1000):
 	PF.perform_inference()
 	ess=PF.get_ESS()

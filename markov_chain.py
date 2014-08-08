@@ -16,7 +16,7 @@ datadims=10
 nparticles=1000
 
 n_joint_samples=64
-n_history=10
+n_history=4
 
 nt=10000
 
@@ -41,8 +41,8 @@ observations=np.dot(true_s,trueG)+np.random.randn(true_s.shape[0],datadims)*np.e
 
 #pp.plot(true_s)
 #pp.figure(2)
-pp.plot(observations)
-pp.show()
+#pp.plot(observations)
+#pp.show()
 
 shared_obs=theano.shared(observations.astype(np.float32))
 shared_t=theano.shared(n_history+2)
@@ -91,10 +91,10 @@ future_updates[future_st0_shared]=future_st0
 
 update_model_samples=theano.function([],[],updates=future_updates)
 
-proposal_loss=-T.mean(proposal_model.rel_log_prob(T.concatenate([future_st0_shared,future_data_shared],axis=1),
+proposal_loss_prep=-T.mean(proposal_model.rel_log_prob(T.concatenate([future_st0_shared,future_data_shared],axis=1),
 			future_st1_shared,include_params_in_Z=True))
 
-proposal_learner=SGDLearner(proposal_model.params,proposal_loss,init_lrates=[1e-6],init_momentum_coeffs=[0.99])
+proposal_learner_prep=SGDLearner(proposal_model.params,proposal_loss_prep,init_lrates=[1e-6],init_momentum_coeffs=[0.99])
 
 W=genproc.M.get_value()
 sigx=np.exp(-2.0*genproc.log_stddev.get_value()).reshape((datadims,1))
@@ -123,14 +123,19 @@ lrates=np.asarray([1.0, 1.0])*1e-0
 #learner=SGDLearner(total_params, total_loss, init_lrates=lrates)
 learner=SGDLearner(total_params, total_loss, init_lrates=[1e-3])
 
+#proposal_loss=-T.mean(proposal_model.rel_log_prob(T.concatenate([shared_joint_samples[-2*n_joint_samples:-n_joint_samples],T.extra_ops.repeat(learning_observations[-1].dimshuffle('x',0),n_joint_samples,axis=0)],axis=1),
+			#shared_joint_samples[-n_joint_samples:],include_params_in_Z=True))
+
+#proposal_learner=SGDLearner(proposal_model.params,proposal_loss,init_lrates=[1e-6],init_momentum_coeffs=[0.99])
+
 losshist=[]
-for i in range(20000):
+for i in range(2000):
 	update_model_samples()
-	losshist.append(proposal_learner.get_current_loss())
+	losshist.append(proposal_learner_prep.get_current_loss())
 	if i%100==0:
 		print losshist[i]
 	for j in range(2):
-		proposal_learner.perform_learning_step()
+		proposal_learner_prep.perform_learning_step()
 losshist=np.asarray(losshist)
 #pp.plot(losshist)
 #pp.show()
@@ -144,16 +149,22 @@ proplosshist=[]
 min_learn_delay=20
 learn_counter=0
 nan_occurred=False
-proposal_learner.global_lrate.set_value(np.float32(200.0))
+#proposal_learner.global_lrate.set_value(np.float32(200.0))
 for i in range(nt-1000):
 	PF.perform_inference()
 	ess=PF.get_ESS()
 	esshist.append(ess)
+	if ess<nparticles/4:
+		newess,stddevhist,esshs=PF.perform_sequential_resampling()
 	statehist.append(PF.get_current_particles())
 	weighthist.append(PF.get_current_weights())
-	esshist.append(ess)
 	
-	
+	#print newess
+	#pp.plot(stddevhist)
+	#pp.figure(2)
+	#pp.plot(esshs)
+	#pp.show()
+	#esshist.append(newess)
 	if learn_counter>min_learn_delay:# and ess>nparticles/32:
 		perform_joint_sampling()
 		loss0=learner.get_current_loss()
@@ -163,13 +174,13 @@ for i in range(nt-1000):
 		learner.perform_learning_step()
 		#loss1=learner.get_current_loss()
 		learn_counter=0
-		for j in range(100):
-			update_model_samples()
-			proposal_learner.perform_learning_step()
-			proplosshist.append(proposal_learner.get_current_loss())
+		#for j in range(10):
+			##update_model_samples()
+			#proposal_learner.perform_learning_step()
+			#proplosshist.append(proposal_learner.get_current_loss())
 		
 		print 'Iteration ', i
-		print 'Loss: ', loss0, '  Proploss: ', proposal_learner.get_current_loss()
+		print 'Loss: ', loss0#, '  Proploss: ', proposal_learner.get_current_loss()
 	if nan_occurred:
 		break
 	if ess<nparticles*0.75:

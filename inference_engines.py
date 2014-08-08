@@ -5,7 +5,7 @@ import theano.tensor as T
 from collections import OrderedDict
 
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
-
+#from theano.tensor.shared_randomstreams import RandomStreams
 
 class ParticleFilter():
 	''' Implements particle filtering and smoothing for Markov Chains
@@ -77,6 +77,15 @@ class ParticleFilter():
 		nsamps=T.lscalar()
 		joint_samples, joint_updates=self.sample_from_joint(nsamps)
 		self.sample_joint=theano.function([nsamps],joint_samples,updates=joint_updates)
+		
+		new_ess, stddevhist, esshist, sr_updates=self.sequential_resample()
+		self.perform_sequential_resampling=theano.function([],[new_ess,stddevhist,esshist],updates=sr_updates)
+		
+		csamps=self.sample_current(nsamps)
+		self.sample_current_state=theano.function([nsamps],csamps)
+		
+		psamps=self.sample_prev(nsamps)
+		self.sample_previous_state=theano.function([nsamps],psamps)
 		
 		return
 	
@@ -249,7 +258,86 @@ class ParticleFilter():
 		data_sample=self.observation_model.get_samples_noprobs(state_samples[-1])
 		
 		return data_sample, state_samples[-1], state_samples[-2], updates
-
+	
+	
+	def sr_step(self, samples, ess, stddev, decay):
+		proposal_samples=self.theano_rng.normal(size=samples.shape)*stddev.dimshuffle('x',0)+samples
+		diffs=proposal_samples.dimshuffle(0,'x',1)-samples.dimshuffle('x',0,1)
+		log_proposal_probs=T.log(T.sum(T.exp(-T.sum((1.0/(2.0*stddev**2)).dimshuffle('x','x',0)*diffs**2,axis=2)),axis=1))
+		log_transition_probs=self.true_log_transition_probs(self.previous_state, proposal_samples,all_pairs=True)
+		log_transition_probs=T.log(T.dot(T.exp(log_transition_probs).T,self.previous_weights))
+		log_observation_probs=self.true_log_observation_probs(proposal_samples, self.observation_input.dimshuffle('x',0))
+		log_unnorm_weights=log_transition_probs + log_observation_probs - log_proposal_probs
+		unnorm_weights=T.exp(log_unnorm_weights)
+		weights=unnorm_weights/T.sum(unnorm_weights)
+		
+		new_ess=1.0/T.sum(weights**2)
+		
+		#Resampling
+		msamps=self.theano_rng.multinomial(pvals=T.extra_ops.repeat(weights.dimshuffle('x',0),samples.shape[0],axis=0))
+		idxs=T.cast(T.dot(msamps, T.arange(samples.shape[0])),'int64')
+		new_samples=T.cast(proposal_samples[idxs],'float32')
+		
+		sampmean=T.dot(proposal_samples.T, weights)
+		sampvar=T.dot(((proposal_samples-sampmean.dimshuffle('x',0))**2).T,weights)
+		#propmean=T.mean(proposal_samples, axis=0)
+		#propvar=T.mean((proposal_samples-propmean.dimshuffle('x',0))**2,axis=0)
+		#new_stddev=stddev*T.clip(T.exp(decay*(1.0-propvar/sampvar)),0.5,2.0)
+		new_stddev=stddev*T.clip(T.exp(decay*(1.0-stddev**2/sampvar)),0.5,2.0)
+		return [new_samples, T.cast(new_ess,'float32'), new_stddev], theano.scan_module.until(new_ess>self.n_particles*0.6)
+	
+	
+	def sequential_resample(self, nsamps=1000, init_stddev=4.0, max_steps=120, stddev_decay=0.1):
+		'''Repeatedly resamples and then samples from a proposal distribution
+		constructed from the current samples. Should be used when the main
+		proposal distribution is poor or whenever the ESS is poor.
+		'''
+		samps=self.theano_rng.multinomial(pvals=T.extra_ops.repeat(self.current_weights.dimshuffle('x',0),nsamps,axis=0))
+		idxs=T.cast(T.dot(samps, T.arange(self.n_particles)),'int64')
+		init_particles=self.current_state[idxs]
+		
+		essT=T.as_tensor_variable(np.asarray(0.0,dtype='float32'))
+		stddevT=T.as_tensor_variable(np.asarray(init_stddev*np.ones(self.state_dims),dtype='float32'))
+		decayT=T.as_tensor_variable(np.asarray(stddev_decay,dtype='float32'))
+		
+		[samphist, esshist, stddevhist], updates = theano.scan(fn=self.sr_step,
+				outputs_info=[init_particles, essT, stddevT],
+				non_sequences=decayT,
+				n_steps=max_steps)
+		
+		end_samples=samphist[-1]
+		end_stddev=stddevhist[-1]
+		samps=self.theano_rng.multinomial(pvals=T.extra_ops.repeat((T.ones_like(T.arange(nsamps))/nsamps).dimshuffle('x',0),self.n_particles,axis=0))
+		idxs=T.cast(T.dot(samps, T.arange(nsamps)),'int64')
+		#means=end_samples[idxs]
+		means=end_samples
+		proposal_samples=self.theano_rng.normal(size=(self.n_particles, self.state_dims))*end_stddev.dimshuffle('x',0)+means
+		diffs=proposal_samples.dimshuffle(0,'x',1)-means.dimshuffle('x',0,1)
+		log_proposal_probs=T.log(T.sum(T.exp(-T.sum((1.0/(2.0*end_stddev**2)).dimshuffle('x','x',0)*diffs**2,axis=2)),axis=1))
+		log_transition_probs=self.true_log_transition_probs(self.previous_state, proposal_samples,all_pairs=True)
+		log_transition_probs=T.log(T.dot(T.exp(log_transition_probs).T,self.previous_weights))
+		log_observation_probs=self.true_log_observation_probs(proposal_samples, self.observation_input.dimshuffle('x',0))
+		log_unnorm_weights=log_transition_probs + log_observation_probs - log_proposal_probs
+		unnorm_weights=T.exp(log_unnorm_weights)
+		weights=unnorm_weights/T.sum(unnorm_weights)
+		
+		updates[self.particles]=T.set_subtensor(self.current_state, proposal_samples)
+		updates[self.weights]=T.set_subtensor(self.current_weights, weights)
+		return 1.0/T.sum(weights**2), stddevhist, esshist, updates
+	
+	
+	def sample_current(self, nsamps):
+		samps=self.theano_rng.multinomial(pvals=T.extra_ops.repeat(self.current_weights.dimshuffle('x',0),nsamps,axis=0))
+		idxs=T.cast(T.dot(samps, T.arange(self.n_particles)),'int64')
+		samples=self.current_state[idxs]
+		return samples
+	
+	
+	def sample_prev(self, nsamps):
+		samps=self.theano_rng.multinomial(pvals=T.extra_ops.repeat(self.previous_weights.dimshuffle('x',0),nsamps,axis=0))
+		idxs=T.cast(T.dot(samps, T.arange(self.n_particles)),'int64')
+		samples=self.previous_state[idxs]
+		return samples
 
 
 class ImportanceSampler():

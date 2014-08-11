@@ -284,10 +284,10 @@ class ParticleFilter():
 		#propvar=T.mean((proposal_samples-propmean.dimshuffle('x',0))**2,axis=0)
 		#new_stddev=stddev*T.clip(T.exp(decay*(1.0-propvar/sampvar)),0.5,2.0)
 		new_stddev=stddev*T.clip(T.exp(decay*(1.0-stddev**2/sampvar)),0.5,2.0)
-		return [new_samples, T.cast(new_ess,'float32'), new_stddev], theano.scan_module.until(new_ess>self.n_particles*0.6)
+		return [new_samples, T.cast(new_ess,'float32'), new_stddev], theano.scan_module.until(new_ess>100)
 	
 	
-	def sequential_resample(self, nsamps=1000, init_stddev=4.0, max_steps=120, stddev_decay=0.1):
+	def sequential_resample(self, nsamps=200, init_stddev=4.0, max_steps=120, stddev_decay=0.1):
 		'''Repeatedly resamples and then samples from a proposal distribution
 		constructed from the current samples. Should be used when the main
 		proposal distribution is poor or whenever the ESS is poor.

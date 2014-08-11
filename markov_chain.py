@@ -13,7 +13,7 @@ from learning_algs import SGD_Momentum_Learner as SGDLearner
 
 statedims=2
 datadims=10
-nparticles=1000
+nparticles=200
 
 n_joint_samples=64
 n_history=4
@@ -123,10 +123,10 @@ lrates=np.asarray([1.0, 1.0])*1e-0
 #learner=SGDLearner(total_params, total_loss, init_lrates=lrates)
 learner=SGDLearner(total_params, total_loss, init_lrates=[1e-3])
 
-#proposal_loss=-T.mean(proposal_model.rel_log_prob(T.concatenate([shared_joint_samples[-2*n_joint_samples:-n_joint_samples],T.extra_ops.repeat(learning_observations[-1].dimshuffle('x',0),n_joint_samples,axis=0)],axis=1),
-			#shared_joint_samples[-n_joint_samples:],include_params_in_Z=True))
+proposal_loss=-T.mean(proposal_model.rel_log_prob(T.concatenate([shared_joint_samples[-2*n_joint_samples:-n_joint_samples],T.extra_ops.repeat(learning_observations[-1].dimshuffle('x',0),n_joint_samples,axis=0)],axis=1),
+			shared_joint_samples[-n_joint_samples:],include_params_in_Z=True))
 
-#proposal_learner=SGDLearner(proposal_model.params,proposal_loss,init_lrates=[1e-6],init_momentum_coeffs=[0.99])
+proposal_learner=SGDLearner(proposal_model.params,proposal_loss,init_lrates=[1e-6],init_momentum_coeffs=[0.99])
 
 losshist=[]
 for i in range(2000):
@@ -155,11 +155,11 @@ for i in range(nt-1000):
 	ess=PF.get_ESS()
 	esshist.append(ess)
 	if ess<nparticles/4:
-		newess,stddevhist,esshs=PF.perform_sequential_resampling()
+		ess,stddevhist,esshs=PF.perform_sequential_resampling()
 	statehist.append(PF.get_current_particles())
 	weighthist.append(PF.get_current_weights())
 	
-	#print newess
+	#print ess
 	#pp.plot(stddevhist)
 	#pp.figure(2)
 	#pp.plot(esshs)

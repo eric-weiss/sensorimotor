@@ -153,12 +153,13 @@ nan_occurred=False
 for i in range(nt-1000):
 	PF.perform_inference()
 	ess=PF.get_ESS()
-	esshist.append(ess)
+	
 	if ess<nparticles/4:
 		ess,stddevhist,esshs=PF.perform_sequential_resampling()
 	statehist.append(PF.get_current_particles())
 	weighthist.append(PF.get_current_weights())
-	
+	ess=PF.get_ESS()
+	esshist.append(ess)
 	#print ess
 	#pp.plot(stddevhist)
 	#pp.figure(2)

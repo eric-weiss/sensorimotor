@@ -104,7 +104,7 @@ init_prop_log_stddev=-0.5*np.log(np.diag(np.dot(W,sigx*W.T)+sigs*np.eye(statedim
 
 
 total_params=tranproc.params + genproc.params
-#total_params=[tranproc.M, genproc.M, genproc.log_stddev, tranproc.log_stddev]
+#total_params=[tranproc.M, genproc.M]#, tranproc.log_stddev]
 
 
 obs=T.fvector()
@@ -121,7 +121,7 @@ total_loss=-(tranloss+genloss)
 lrates=np.asarray([1.0, 1.0])*1e-0
 
 #learner=SGDLearner(total_params, total_loss, init_lrates=lrates)
-learner=SGDLearner(total_params, total_loss, init_lrates=[1e-3])
+learner=SGDLearner(total_params, total_loss, init_lrates=[1e-2])
 
 proposal_loss=-T.mean(proposal_model.rel_log_prob(T.concatenate([shared_joint_samples[-2*n_joint_samples:-n_joint_samples],T.extra_ops.repeat(learning_observations[-1].dimshuffle('x',0),n_joint_samples,axis=0)],axis=1),
 			shared_joint_samples[-n_joint_samples:],include_params_in_Z=True))
@@ -184,7 +184,7 @@ for i in range(nt-1000):
 		print 'Loss: ', loss0#, '  Proploss: ', proposal_learner.get_current_loss()
 	if nan_occurred:
 		break
-	if ess<nparticles*0.75:
+	if ess<nparticles*0.5:
 		PF.resample()
 	
 	increment_t()

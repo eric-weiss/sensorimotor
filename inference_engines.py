@@ -119,6 +119,8 @@ class ParticleFilter():
 		
 		log_unnorm_weights=log_transition_probs + log_observation_probs - log_proposal_probs
 		
+		log_unnorm_weights=log_unnorm_weights-T.max(log_unnorm_weights)-10.0
+		
 		unnorm_weights=T.exp(log_unnorm_weights)*self.current_weights
 		
 		weights=unnorm_weights/T.sum(unnorm_weights)
@@ -274,6 +276,7 @@ class ParticleFilter():
 		log_transition_probs=T.log(T.dot(T.exp(log_transition_probs).T,self.previous_weights))
 		log_observation_probs=self.true_log_observation_probs(proposal_samples, self.observation_input.dimshuffle('x',0))
 		log_unnorm_weights=log_transition_probs + log_observation_probs - log_proposal_probs
+		log_unnorm_weights=log_unnorm_weights-T.max(log_unnorm_weights)-10.0
 		unnorm_weights=T.exp(log_unnorm_weights)
 		new_weights=unnorm_weights/T.sum(unnorm_weights)
 		

@@ -12,17 +12,17 @@ from inference_engines import ParticleFilter
 from learning_algs import SGD_Momentum_Learner as SGDLearner
 
 statedims=2
-datadims=20
-nparticles=200
+datadims=10
+nparticles=40
 
 n_joint_samples=64
 n_history=80
 
-nt=10000
+nt=4000
 
 #======Making data=======================
 antisym=np.tril(np.ones((statedims, statedims)),k=-1); antisym=antisym-antisym.T
-trueM=np.eye(statedims,k=1)*8e-2
+trueM=np.eye(statedims,k=1)*32e-2
 trueM=trueM+trueM.T; trueM=trueM*antisym+np.eye(statedims)
 trueG=np.sin(np.reshape(np.arange(statedims*datadims),(statedims,datadims))*10.0)*2.0
 trueG[0,:datadims/2]=0.0
@@ -41,8 +41,8 @@ observations=np.dot(true_s,trueG)+np.random.randn(true_s.shape[0],datadims)*np.e
 
 #pp.plot(true_s)
 #pp.figure(2)
-pp.plot(observations)
-pp.show()
+#pp.plot(observations)
+#pp.show()
 
 shared_obs=theano.shared(observations.astype(np.float32))
 shared_t=theano.shared(n_history+2)
@@ -56,17 +56,19 @@ tranproc=Lmodel(statedims, statedims)
 
 #genproc.M.set_value((genproc.M.get_value()*trueG).astype(np.float32))
 genproc.M.set_value(trueG.astype(np.float32))
-genproc.log_stddev.set_value((np.ones(datadims)*-4).astype(np.float32))
+genproc.log_stddev.set_value((np.ones(datadims)*-1).astype(np.float32))
 
 proposal_model=Lmodel(statedims+datadims,statedims)
 
+proposal_model.M.set_value((proposal_model.M.get_value()*0.0).astype(np.float32))
+proposal_model.log_stddev.set_value((proposal_model.log_stddev.get_value()*4.0).astype(np.float32))
 
 PF=ParticleFilter(tranproc, genproc, nparticles, n_history=n_history, observation_input=current_observation)
 
 
-#tranproc.M.set_value(np.eye(statedims).astype(np.float32))
-tranproc.M.set_value(trueM.astype(np.float32))
-tranproc.log_stddev.set_value((np.ones(statedims)*-1.0).astype(np.float32))
+tranproc.M.set_value(np.eye(statedims).astype(np.float32))
+#tranproc.M.set_value(trueM.astype(np.float32))
+tranproc.log_stddev.set_value((np.ones(statedims)*0.0).astype(np.float32))
 
 
 prop_distrib = proposal_model.get_samples(T.concatenate(
@@ -106,8 +108,8 @@ sigs=np.exp(-2.0*tranproc.log_stddev.get_value()).reshape((statedims,1))
 init_prop_log_stddev=-0.5*np.log(np.diag(np.dot(W,sigx*W.T)+sigs*np.eye(statedims)))
 
 
-#total_params=tranproc.params + genproc.params
-total_params=[tranproc.M, genproc.M]#, tranproc.log_stddev]
+total_params=tranproc.params + genproc.params
+#total_params=[tranproc.M, genproc.M]#, tranproc.log_stddev]
 
 
 obs=T.fvector()
@@ -124,7 +126,7 @@ total_loss=-(tranloss+genloss)
 lrates=np.asarray([1.0, 1.0])*1e-0
 
 #learner=SGDLearner(total_params, total_loss, init_lrates=lrates)
-learner=SGDLearner(total_params, total_loss, init_lrates=np.asarray([1e-2, 1e-4, 1e-4, 1e-2, 1e-4, 1e-4])*0.0,init_momentum_coeffs=[0.3])
+learner=SGDLearner(total_params, total_loss, init_lrates=np.asarray([1e-2, 1e-4, 1e-4, 1e-2, 1e-4, 1e-4])*4e-0,init_momentum_coeffs=[0.3])
 
 proposal_loss=-T.mean(proposal_model.rel_log_prob(T.concatenate([shared_joint_samples[-2*n_joint_samples:-n_joint_samples],T.extra_ops.repeat(learning_observations[-1].dimshuffle('x',0),n_joint_samples,axis=0)],axis=1),
 			shared_joint_samples[-n_joint_samples:],include_params_in_Z=True))
@@ -157,16 +159,18 @@ nan_occurred=False
 for i in range(nt-1000):
 	PF.perform_inference()
 	ess=PF.get_ESS()
-	
-	if ess<nparticles/4:
+	#print ess
+	if ess<nparticles/4 or True:
 		ess,stddevhist,esshs=PF.perform_sequential_resampling()
+		#pp.plot(stddevhist)
+		#pp.show()
 	statehist.append(PF.get_current_particles())
 	weighthist.append(PF.get_current_weights())
 	paramhist.append(genproc.log_stddev.get_value())
 	ess=PF.get_ESS()
 	esshist.append(ess)
 	#print ess
-	#pp.plot(stddevhist)
+	
 	#pp.figure(2)
 	#pp.plot(esshs)
 	#pp.show()
@@ -174,16 +178,17 @@ for i in range(nt-1000):
 	if learn_counter>min_learn_delay:# and ess>nparticles/32:
 		perform_joint_sampling()
 		js=shared_joint_samples.get_value()
-		pp.plot(np.mean(js.reshape((n_history+1,n_joint_samples,statedims)),axis=1))
-		pp.figure(2)
-		print np.asarray(statehist[-(n_history+1):]).shape
-		pp.plot(np.asarray(statehist[-(n_history+1):]).reshape(((n_history+1)*nparticles,statedims)))
-		pp.show()
+		#pp.plot(np.mean(js.reshape((n_history+1,n_joint_samples,statedims)),axis=1))
+		#pp.figure(2)
+		#print np.asarray(statehist[-(n_history+1):]).shape
+		#pp.plot(np.asarray(statehist[-(n_history+1):]).reshape(((n_history+1),statedims*nparticles)))
+		#pp.show()
 		loss0=learner.get_current_loss()
 		if np.isnan(loss0):
 			nan_occurred=True
 			break
-		learner.perform_learning_step()
+		for i in range(200):
+			learner.perform_learning_step()
 		#loss1=learner.get_current_loss()
 		learn_counter=0
 		#for j in range(10):
@@ -194,6 +199,7 @@ for i in range(nt-1000):
 		print 'Iteration ', i
 		print 'Loss: ', loss0#, '  Proploss: ', proposal_learner.get_current_loss()
 		print tranproc.M.get_value()
+		print trueM
 		print tranproc.log_stddev.get_value()
 		
 		

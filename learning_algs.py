@@ -13,7 +13,7 @@ class SGD_Momentum_Learner():
 	momentum.
 	'''
 	
-	def __init__(self, params, loss, init_momentum_coeffs=[0.95], init_lrates=[1e-3], lrate_decay=0.999):
+	def __init__(self, params, loss, init_momentum_coeffs=[0.95], init_lrates=[1e-3], lrate_decay=0.9999):
 		''' 
 		params: A list of parameters. They should be used to compute loss.
 		

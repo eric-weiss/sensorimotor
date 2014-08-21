@@ -113,17 +113,25 @@ class ParticleFilter():
 		
 		proposal_samples, log_proposal_probs=self.proposal_distrib
 		
-		log_transition_probs=self.true_log_transition_probs(self.current_state, proposal_samples)
+		printing=False
 		
-		log_observation_probs=self.true_log_observation_probs(proposal_samples, data.dimshuffle('x',0))
+		if printing:
+			log_transition_probs=theano.printing.Print('1 log transition probs update')(self.true_log_transition_probs(self.current_state, proposal_samples))
+			log_observation_probs=theano.printing.Print('2 log observation probs update')(self.true_log_observation_probs(proposal_samples, data.dimshuffle('x',0)))
+			log_unnorm_weights=theano.printing.Print('3 log unnorm weights update')(log_transition_probs + log_observation_probs - log_proposal_probs)
+			log_unnorm_weights_center=theano.printing.Print('4 log unnorm weights center update')(log_unnorm_weights-T.max(log_unnorm_weights))
+			unnorm_weights=theano.printing.Print('5 unnorm weights update')(T.exp(log_unnorm_weights_center)*self.current_weights)
+			normalizer=theano.printing.Print('6 normalizer update')(T.sum(unnorm_weights))
+		else:
+			log_transition_probs=self.true_log_transition_probs(self.current_state, proposal_samples)
+			log_observation_probs=self.true_log_observation_probs(proposal_samples, data.dimshuffle('x',0))
+			log_unnorm_weights=log_transition_probs + log_observation_probs - log_proposal_probs
+			log_unnorm_weights_center=log_unnorm_weights-T.max(log_unnorm_weights)
+			unnorm_weights=T.exp(log_unnorm_weights_center)*self.current_weights
+			normalizer=T.sum(unnorm_weights)
+
 		
-		log_unnorm_weights=log_transition_probs + log_observation_probs - log_proposal_probs
-		
-		log_unnorm_weights=log_unnorm_weights-T.max(log_unnorm_weights)-10.0
-		
-		unnorm_weights=T.exp(log_unnorm_weights)*self.current_weights
-		
-		weights=unnorm_weights/T.sum(unnorm_weights)
+		weights=unnorm_weights/normalizer
 		
 		updates=OrderedDict()
 		
@@ -224,11 +232,16 @@ class ParticleFilter():
 		idxs=T.cast(T.dot(samps, T.arange(self.n_particles)),'int64')
 		samps_t0=self.current_state[idxs]
 		
-		state_samples, updates = theano.scan(fn=self.transition_model.get_samples_noprobs,
-											outputs_info=[samps_t0],
+		def fstep(states):
+			next_states=self.transition_model.get_samples_noprobs(states)
+			next_data=self.observation_model.get_samples_noprobs(next_states)
+			return next_states, next_data
+		
+		[state_samples, data_samples], updates = theano.scan(fn=fstep,
+											outputs_info=[samps_t0, None],
 											n_steps=n_T)
 		
-		data_samples=self.observation_model.get_samples_noprobs(state_samples)
+		#data_samples=self.observation_model.get_samples_noprobs(state_samples)
 		
 		return data_samples, state_samples, samps_t0, updates
 	
@@ -271,14 +284,29 @@ class ParticleFilter():
 		
 		proposal_samples=self.theano_rng.normal(size=means.shape)*stddev.dimshuffle('x',0)+sample_means
 		diffs=proposal_samples.dimshuffle(0,'x',1)-sample_means.dimshuffle('x',0,1)
-		log_proposal_probs=T.log(T.dot(T.exp(-T.sum((1.0/(2.0*stddev**2)).dimshuffle('x','x',0)*diffs**2,axis=2)),weights))
-		log_transition_probs=self.true_log_transition_probs(self.previous_state, proposal_samples, all_pairs=True)
-		log_transition_probs=T.log(T.dot(T.exp(log_transition_probs).T,self.previous_weights))
-		log_observation_probs=self.true_log_observation_probs(proposal_samples, self.observation_input.dimshuffle('x',0))
-		log_unnorm_weights=log_transition_probs + log_observation_probs - log_proposal_probs
-		log_unnorm_weights=log_unnorm_weights-T.max(log_unnorm_weights)-10.0
-		unnorm_weights=T.exp(log_unnorm_weights)
-		new_weights=unnorm_weights/T.sum(unnorm_weights)
+		
+		printing=False
+		if printing:
+			log_proposal_probs=theano.printing.Print('1 log_proposal_probs')(T.log(T.dot(T.exp(-T.sum((1.0/(2.0*stddev**2)).dimshuffle('x','x',0)*diffs**2,axis=2)),weights)))
+			log_transition_probs=theano.printing.Print('2 log transition probs')(self.true_log_transition_probs(self.previous_state, proposal_samples, all_pairs=True))
+			log_transition_probs_2=theano.printing.Print('3 log transition probs 2')(T.log(T.dot(T.exp(log_transition_probs).T,self.previous_weights)))
+			log_observation_probs=theano.printing.Print('4 log observation probs')(self.true_log_observation_probs(proposal_samples, self.observation_input.dimshuffle('x',0)))
+			log_unnorm_weights=theano.printing.Print('5 log unnorm weights nomax')(log_transition_probs_2 + log_observation_probs - log_proposal_probs)
+			log_unnorm_weights=theano.printing.Print('6 log unnorm weights')(log_unnorm_weights-T.max(log_unnorm_weights))
+			unnorm_weights=theano.printing.Print('7 unnorm weights')(T.exp(log_unnorm_weights))
+			normalizer=theano.printing.Print('8 normalizer')(T.sum(unnorm_weights))
+		else:
+			log_proposal_probs=T.log(T.dot(T.exp(-T.sum((1.0/(2.0*stddev**2)).dimshuffle('x','x',0)*diffs**2,axis=2)),weights))
+			log_transition_probs=self.true_log_transition_probs(self.previous_state, proposal_samples, all_pairs=True)
+			log_transition_probs=T.log(T.dot(T.exp(log_transition_probs).T,self.previous_weights))
+			log_observation_probs=self.true_log_observation_probs(proposal_samples, self.observation_input.dimshuffle('x',0))
+			log_unnorm_weights=log_transition_probs + log_observation_probs - log_proposal_probs
+			log_unnorm_weights=log_unnorm_weights-T.max(log_unnorm_weights)
+			unnorm_weights=T.exp(log_unnorm_weights)
+			normalizer=T.sum(unnorm_weights)
+
+		
+		new_weights=unnorm_weights/normalizer
 		
 		new_ess=1.0/T.sum(new_weights**2)
 		
@@ -287,7 +315,8 @@ class ParticleFilter():
 		#propmean=T.mean(proposal_samples, axis=0)
 		#propvar=T.mean((proposal_samples-propmean.dimshuffle('x',0))**2,axis=0)
 		#new_stddev=stddev*T.clip(T.exp(decay*(1.0-propvar/sampvar)),0.5,2.0)
-		new_stddev=stddev*T.clip(T.exp(decay*(1.0-stddev**2/sampvar)),0.5,2.0)
+		#new_stddev=T.clip(stddev*T.clip(T.exp(decay*(1.0-stddev**2/sampvar)),0.5,2.0),0.0,4.0)
+		new_stddev=T.clip(stddev*T.clip(T.exp(decay*(1.0-stddev**2/sampvar)),0.5,1.5),0.0,4.0)
 		return [proposal_samples, new_weights, new_stddev, T.cast(new_ess,'float32')]#, theano.scan_module.until(new_ess>100)
 	
 	
@@ -326,6 +355,15 @@ class ParticleFilter():
 		idxs=T.cast(T.dot(samps, T.arange(self.n_particles)),'int64')
 		samples=self.previous_state[idxs]
 		return samples
+	
+	
+	def get_history(self):
+		'''This function returns a 3-D array containing all the particles
+		and a 2-D array of weights for the entire memory. The first dimension indexes
+		time, with the zeroth entry corresponding to the earliest point in 
+		memory.'''
+		idxs=(T.arange(self.n_history+1)-self.n_history+self.time_counter)%(self.n_history+1)
+		return self.particles[idxs], self.weights[idxs]
 
 
 class ImportanceSampler():

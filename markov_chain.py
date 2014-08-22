@@ -13,13 +13,13 @@ from inference_engines import ParticleFilter
 from learning_algs import SGD_Momentum_Learner as SGDLearner
 
 statedims=2
-datadims=20
+datadims=6
 nparticles=200
 
 n_joint_samples=128
 n_history=100
 
-nt=8000
+nt=2000
 
 #======Making data=======================
 
@@ -32,13 +32,13 @@ trueM=trueM+trueM.T; trueM=trueM*antisym+np.eye(statedims)
 #trueG[0,:datadims/2]=0.0
 #trueG[1,datadims/2:]=0.0
 
-trueG=MLmodel(statedims,datadims,4)
-trueG.log_stddev.set_value((np.ones(datadims)*-4.0).astype(np.float32))
+trueG=MLmodel(statedims,datadims,2)
+trueG.log_stddev.set_value((np.ones(datadims)*-1.0).astype(np.float32))
 inputT=T.fmatrix()
 outputT=trueG.get_samples_noprobs(inputT)
 sampleG=theano.function([inputT],outputT,allow_input_downcast=True)
 
-true_log_stddev=np.zeros(statedims)-10.0
+true_log_stddev=np.zeros(statedims)-2.0
 
 s0=np.zeros(statedims); s0[0]=4.0; s0=s0.astype(np.float32)
 true_s=[s0]
@@ -74,7 +74,7 @@ learning_observations=shared_obs[shared_t-n_history:shared_t+1]
 increment_t=theano.function([],updates={shared_t: shared_t+1})
 #========================================
 
-genproc=MLmodel(statedims, datadims,4)
+genproc=MLmodel(statedims, datadims,2)
 tranproc=Lmodel(statedims, statedims)
 
 #genproc.M.set_value((genproc.M.get_value()*1e0).astype(np.float32))
@@ -131,7 +131,7 @@ genloss=T.mean(genproc.rel_log_prob(shared_joint_samples,T.extra_ops.repeat(lear
 total_loss=-(tranloss+genloss)
 
 
-init_lrates=np.asarray([1e-2, 1e-3, 1e-3, 1e-2, 0e-2, 0e-2, 1e-2, 1e-3, 1e-3])*2e0
+init_lrates=np.asarray([1e-2, 1e-3, 1e-3, 1e-2, 0e-2, 0e-2, 1e-2, 1e-3, 1e-3])*1e0
 
 learner=SGDLearner(total_params, total_loss, init_lrates=init_lrates,init_momentum_coeffs=[0.1])
 
@@ -242,8 +242,9 @@ print tranproc.log_stddev.get_value()
 print true_log_stddev
 print genproc.log_stddev.get_value()
 
-futuresamps,futurestates,futureinit=PF.sample_from_future(10,1000)
+futuresamps,futurestates,futureinit=PF.sample_from_future(100,1000)
 futuremeans=np.mean(futuresamps,axis=1)
+futurevars=np.sqrt(np.var(futuresamps,axis=1))
 	
 statehist=np.asarray(statehist,dtype='float32')
 weighthist=np.asarray(weighthist,dtype='float32')
@@ -252,10 +253,13 @@ proplosshist=np.asarray(proplosshist,dtype='float32')
 
 meanstate=np.sum(statehist*np.reshape(weighthist,(statehist.shape[0],statehist.shape[1],1)),axis=1)
 
+
 losshist=np.asarray(learner.loss_history)
 pp.plot(losshist[:,1])
 pp.figure(2)
 pp.plot(futuremeans,'r')
+pp.plot(futuremeans+futurevars,'g')
+pp.plot(futuremeans-futurevars,'g')
 #pp.plot(futuresamps.reshape((1000,10*datadims)),'r')
 pp.plot(observations[shared_t.get_value():],'b')
 pp.figure(3)

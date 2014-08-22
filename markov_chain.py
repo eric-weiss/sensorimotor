@@ -13,22 +13,22 @@ from inference_engines import ParticleFilter
 from learning_algs import SGD_Momentum_Learner as SGDLearner
 
 statedims=2
-datadims=4
+datadims=6
 nparticles=200
 
 n_joint_samples=128
 n_history=100
 
-nt=4000
+nt=6000
 
 save_params=True
-load_params=False
+load_params=True
 
 save_prop_model=True
-load_prop_model=False
+load_prop_model=True
 
-save_data=True
-load_data=False
+save_data=False
+load_data=True
 
 #======Making data=======================
 
@@ -51,7 +51,7 @@ else:
 	#trueM=np.asarray([[np.cos(theta), -np.sin(theta)],[np.sin(theta), np.cos(theta)]],dtype='float32')
 	
 	trueG=MLmodel(statedims,datadims,2)
-	trueG.log_stddev.set_value((np.ones(datadims)*-3.5+np.arange(datadims)*0.3).astype(np.float32))
+	trueG.log_stddev.set_value((np.ones(datadims)*-2.5+np.arange(datadims)*0.2).astype(np.float32))
 	inputT=T.fmatrix()
 	outputGT=trueG.get_samples_noprobs(inputT)
 	sampleG=theano.function([inputT],outputGT,allow_input_downcast=True)
@@ -61,8 +61,8 @@ else:
 	trueM.log_stddev.set_value(true_log_stddev.astype(np.float32))
 	Ms=np.zeros((3,statedims,statedims))
 	Ms[0,:,:]=np.eye(statedims)*0.99
-	theta1=0.7
-	theta2=1.4
+	theta1=0.6
+	theta2=0.9
 	Ms[1,:,:]=np.asarray([[np.cos(theta1), -np.sin(theta1)],[np.sin(theta1), np.cos(theta1)]])*1.2
 	Ms[2,:,:]=np.asarray([[np.cos(theta2), -np.sin(theta2)],[np.sin(theta2), np.cos(theta2)]])*1.2
 	centers=np.zeros((3,statedims))
@@ -70,8 +70,8 @@ else:
 	biases=np.zeros(3); biases[0]=-4.0
 	spreads=np.tile(1.0*np.eye(statedims),(3,1,1))
 	spreads[0,:,:]=spreads[0,:,:]*0.25
-	spreads[1,0,0]=2.0
-	spreads[2,0,0]=2.0
+	spreads[1,0,0]=1.5
+	spreads[2,0,0]=1.5
 	trueM.Ms.set_value(Ms.astype(np.float32))
 	trueM.biases.set_value(biases.astype(np.float32))
 	trueM.centers.set_value(centers.astype(np.float32))
@@ -182,9 +182,9 @@ genloss=T.mean(genproc.rel_log_prob(shared_joint_samples,T.extra_ops.repeat(lear
 total_loss=-(tranloss+genloss)
 
 
-init_lrates=np.asarray([1e-2, 1e-2, 1e-2, 1e-2, 1e-3, 1e-3, 1e-2, 0e-2, 0e-2, 1e-2, 1e-3, 1e-3])*1e0
+init_lrates=np.asarray([4e-2, 4e-2, 4e-2, 4e-2, 1e-3, 2e-3, 4e-2, 0e-2, 0e-2, 4e-2, 1e-3, 1e-3])*5e-1
 
-learner=SGDLearner(total_params, total_loss, init_lrates=init_lrates,init_momentum_coeffs=[0.1])
+learner=SGDLearner(total_params, total_loss, init_lrates=init_lrates,init_momentum_coeffs=[0.98])
 
 
 proplogprobs=proposal_model.rel_log_prob(T.concatenate([PF.previous_state,
@@ -205,12 +205,12 @@ statehist=[]
 weighthist=[]
 paramhist=[]
 proplosshist=[]
-min_learn_delay=80
-learn_counter=-200
+min_learn_delay=150
+learn_counter=-400
 nan_occurred=False
 preddatahist=[]
 #proposal_learner.global_lrate.set_value(np.float32(200.0))
-for i in range(nt-1000):
+for i in range(nt-200):
 	PF.perform_inference()
 	ess=PF.get_ESS()
 	esshist.append(ess)
@@ -258,9 +258,28 @@ for i in range(nt-1000):
 		if np.isnan(loss0):
 			nan_occurred=True
 			break
-		for j in range(200):
-			learner.perform_learning_step()
-		#loss1=learner.get_current_loss()
+		
+		
+		
+		gparams0=[param.get_value() for param in genproc.params]
+		tparams0=[param.get_value() for param in tranproc.params]
+		lhs=[]
+		while True:
+			for momentum in learner.momentums:
+				momentum.set_value((momentum.get_value()*0.0).astype(np.float32))
+			for j in range(400):
+				learner.perform_learning_step()
+				#lhs.append(learner.get_current_loss())
+			loss1=learner.get_current_loss()
+			if loss1>loss0:
+				learner.global_lrate.set_value((learner.global_lrate.get_value()*0.95).astype(np.float32))
+				for i in range(len(gparams0)):
+					genproc.params[i].set_value(gparams0[i])
+				for i in range(len(tparams0)):
+					tranproc.params[i].set_value(tparams0[i])
+			else:
+				break
+		#pp.plot(lhs); pp.show()
 		learn_counter=0
 		#for j in range(10):
 			##update_model_samples()
@@ -268,11 +287,15 @@ for i in range(nt-1000):
 			#proplosshist.append(proposal_learner.get_current_loss())
 		
 		print 'Iteration ', i
-		print 'Loss: ', loss0, '  Proploss: ', proposal_learner.get_current_loss()
+		print 'Loss: ', loss1, '  Proploss: ', proposal_learner.get_current_loss()
 		#print tranproc.M.get_value()
 		#print trueM
 		print tranproc.log_stddev.get_value()
-		print genproc.log_stddev.get_value()
+		print tranproc.spreads.get_value()
+		print tranproc.centers.get_value()
+		print tranproc.biases.get_value()
+		print tranproc.Ms.get_value()
+		#print genproc.log_stddev.get_value()
 	
 	statesamps=PF.sample_current_state(100)
 	#preddatahist.append(np.mean(np.dot(statesamps,genproc.M.get_value()),axis=0))
@@ -288,13 +311,14 @@ for i in range(nt-1000):
 	
 	learn_counter+=1
 
+print 'Ending lrate: ', learner.global_lrate.get_value()
 #print tranproc.M.get_value()
 #print trueM
 print tranproc.log_stddev.get_value()
 #print true_log_stddev
 print genproc.log_stddev.get_value()
 
-futuresamps,futurestates,futureinit=PF.sample_from_future(100,1000)
+futuresamps,futurestates,futureinit=PF.sample_from_future(100,200)
 futuremeans=np.mean(futuresamps,axis=1)
 futurevars=np.sqrt(np.var(futuresamps,axis=1))
 	

@@ -13,13 +13,13 @@ from inference_engines import ParticleFilter
 from learning_algs import SGD_Momentum_Learner as SGDLearner
 
 statedims=2
-datadims=8
+datadims=20
 nparticles=200
 
 n_joint_samples=128
 n_history=100
 
-nt=4000
+nt=8000
 
 #======Making data=======================
 
@@ -74,7 +74,7 @@ learning_observations=shared_obs[shared_t-n_history:shared_t+1]
 increment_t=theano.function([],updates={shared_t: shared_t+1})
 #========================================
 
-genproc=MLmodel(statedims, datadims,8)
+genproc=MLmodel(statedims, datadims,4)
 tranproc=Lmodel(statedims, statedims)
 
 #genproc.M.set_value((genproc.M.get_value()*1e0).astype(np.float32))

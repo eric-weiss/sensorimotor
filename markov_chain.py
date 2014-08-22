@@ -13,57 +13,102 @@ from inference_engines import ParticleFilter
 from learning_algs import SGD_Momentum_Learner as SGDLearner
 
 statedims=2
-datadims=6
+datadims=4
 nparticles=200
 
 n_joint_samples=128
 n_history=100
 
-nt=2000
+nt=4000
+
+save_params=True
+load_params=False
+
+save_prop_model=True
+load_prop_model=False
+
+save_data=True
+load_data=False
 
 #======Making data=======================
 
-#Linear/Gaussian
-antisym=np.tril(np.ones((statedims, statedims)),k=-1); antisym=antisym-antisym.T
-trueM=np.eye(statedims,k=1)*32e-2
-trueM=trueM+trueM.T; trueM=trueM*antisym+np.eye(statedims)
-
-#trueG=np.sin(np.reshape(np.arange(statedims*datadims),(statedims,datadims))*10.0)*2.0
-#trueG[0,:datadims/2]=0.0
-#trueG[1,datadims/2:]=0.0
-
-trueG=MLmodel(statedims,datadims,2)
-trueG.log_stddev.set_value((np.ones(datadims)*-1.0).astype(np.float32))
-inputT=T.fmatrix()
-outputT=trueG.get_samples_noprobs(inputT)
-sampleG=theano.function([inputT],outputT,allow_input_downcast=True)
-
-true_log_stddev=np.zeros(statedims)-2.0
-
-s0=np.zeros(statedims); s0[0]=4.0; s0=s0.astype(np.float32)
-true_s=[s0]
-for i in range(nt):
-	next_s=np.dot(true_s[i],trueM)
-	next_s=4.0*next_s/np.sqrt(np.sum(next_s**2))
-	true_s.append(next_s+np.random.randn(statedims)*np.exp(true_log_stddev))
-
-#Nonlinear/Gaussian
-#true_model=MLmodel(statedims,datadims,3)
-#s0=np.zeros(statedims)
-#s0[0]=4.0
-#s0=s0.astype(np.float32)
-#true_s=[s0]
-#inputT=T.fmatrix()
-
-#for i in range(nt):
+if load_data:
+	f=open('data.cpl','rb')
+	observations, true_s = cp.load(f)
+	f.close()
+else:
+	#Linear/Gaussian
 	
+	#antisym=np.tril(np.ones((statedims, statedims)),k=-1); antisym=antisym-antisym.T
+	#trueM=np.eye(statedims,k=1)*16e-2
+	#trueM=trueM+trueM.T; trueM=trueM*antisym+np.eye(statedims)
+	
+	#trueG=np.sin(np.reshape(np.arange(statedims*datadims),(statedims,datadims))*10.0)*2.0
+	#trueG[0,:datadims/2]=0.0
+	#trueG[1,datadims/2:]=0.0
+	
+	#theta=0.08
+	#trueM=np.asarray([[np.cos(theta), -np.sin(theta)],[np.sin(theta), np.cos(theta)]],dtype='float32')
+	
+	trueG=MLmodel(statedims,datadims,2)
+	trueG.log_stddev.set_value((np.ones(datadims)*-3.5+np.arange(datadims)*0.3).astype(np.float32))
+	inputT=T.fmatrix()
+	outputGT=trueG.get_samples_noprobs(inputT)
+	sampleG=theano.function([inputT],outputGT,allow_input_downcast=True)
+	
+	true_log_stddev=np.zeros(statedims)-3.0+np.arange(statedims)
+	trueM=MLmodel(statedims,statedims,3)
+	trueM.log_stddev.set_value(true_log_stddev.astype(np.float32))
+	Ms=np.zeros((3,statedims,statedims))
+	Ms[0,:,:]=np.eye(statedims)*0.99
+	theta1=0.7
+	theta2=1.4
+	Ms[1,:,:]=np.asarray([[np.cos(theta1), -np.sin(theta1)],[np.sin(theta1), np.cos(theta1)]])*1.2
+	Ms[2,:,:]=np.asarray([[np.cos(theta2), -np.sin(theta2)],[np.sin(theta2), np.cos(theta2)]])*1.2
+	centers=np.zeros((3,statedims))
+	centers[1,0]=-1.0; centers[2,0]=1.0
+	biases=np.zeros(3); biases[0]=-4.0
+	spreads=np.tile(1.0*np.eye(statedims),(3,1,1))
+	spreads[0,:,:]=spreads[0,:,:]*0.25
+	spreads[1,0,0]=2.0
+	spreads[2,0,0]=2.0
+	trueM.Ms.set_value(Ms.astype(np.float32))
+	trueM.biases.set_value(biases.astype(np.float32))
+	trueM.centers.set_value(centers.astype(np.float32))
+	trueM.spreads.set_value(spreads.astype(np.float32))
+	outputMT=trueM.get_samples_noprobs(inputT)
+	sampleM=theano.function([inputT],outputMT,allow_input_downcast=True)
+	
+	s0=np.zeros(statedims); s0[0]=2.0; s0=s0.astype(np.float32)
+	true_s=[s0]
+	for i in range(nt):
+		next_s=sampleM(true_s[i].reshape((1,statedims)))
+		#next_s=4.0*next_s/np.sqrt(np.sum(next_s**2))
+		true_s.append(next_s.flatten())
+	
+	#Nonlinear/Gaussian
+	#true_model=MLmodel(statedims,datadims,3)
+	#s0=np.zeros(statedims)
+	#s0[0]=4.0
+	#s0=s0.astype(np.float32)
+	#true_s=[s0]
+	#inputT=T.fmatrix()
+	
+	#for i in range(nt):
+	
+	
+	true_s=np.asarray(true_s,dtype='float32')
+	#observations=np.dot(true_s,trueG)+np.random.randn(true_s.shape[0],datadims)*np.exp(-4.0)
+	observations=sampleG(true_s)
 
-true_s=np.asarray(true_s,dtype='float32')
-#observations=np.dot(true_s,trueG)+np.random.randn(true_s.shape[0],datadims)*np.exp(-4.0)
-observations=sampleG(true_s)
+if save_data:
+	f=open('data.cpl','wb')
+	cp.dump([observations, true_s],f,2)
+	f.close()
 
-#pp.plot(true_s)
-#pp.figure(2)
+
+pp.plot(true_s)
+pp.figure(2)
 pp.plot(observations)
 pp.show()
 
@@ -74,24 +119,30 @@ learning_observations=shared_obs[shared_t-n_history:shared_t+1]
 increment_t=theano.function([],updates={shared_t: shared_t+1})
 #========================================
 
-genproc=MLmodel(statedims, datadims,2)
-tranproc=Lmodel(statedims, statedims)
+if load_params:
+	genproc=MLmodel(statedims, datadims,2,params_fn='gparams.cpl')
+	tranproc=MLmodel(statedims, statedims,3,params_fn='tparams.cpl')
+else:
+	genproc=MLmodel(statedims, datadims,2)
+	tranproc=MLmodel(statedims, statedims, 3)
 
 #genproc.M.set_value((genproc.M.get_value()*1e0).astype(np.float32))
 #genproc.M.set_value(trueG.astype(np.float32))
 #genproc.log_stddev.set_value((np.ones(datadims)*-1).astype(np.float32))
 
-proposal_model=Lmodel(statedims+datadims,statedims)
+if load_prop_model:
+	proposal_model=Lmodel(statedims+datadims,statedims,params_fn='propparams.cpl')
+else:
+	proposal_model=Lmodel(statedims+datadims,statedims)
+	proposal_model.log_stddev.set_value((np.ones(statedims)*1.0).astype(np.float32))
 
-#proposal_model.M.set_value((np.concatenate([np.eye(statedims)*1e-2,genproc.M.get_value().T],axis=0)).astype(np.float32))
-proposal_model.log_stddev.set_value((np.ones(statedims)*1.0).astype(np.float32))
 
 PF=ParticleFilter(tranproc, genproc, nparticles, n_history=n_history, observation_input=current_observation)
 
-
-tranproc.M.set_value(np.eye(statedims).astype(np.float32))
-#tranproc.M.set_value(trueM.astype(np.float32))
-tranproc.log_stddev.set_value((np.ones(statedims)*1.0).astype(np.float32))
+#if not load_params:
+	#tranproc.M.set_value(np.eye(statedims).astype(np.float32))
+	##tranproc.M.set_value(trueM.astype(np.float32))
+	#tranproc.log_stddev.set_value((np.ones(statedims)*1.0).astype(np.float32))
 
 
 prop_distrib = proposal_model.get_samples(T.concatenate(
@@ -131,7 +182,7 @@ genloss=T.mean(genproc.rel_log_prob(shared_joint_samples,T.extra_ops.repeat(lear
 total_loss=-(tranloss+genloss)
 
 
-init_lrates=np.asarray([1e-2, 1e-3, 1e-3, 1e-2, 0e-2, 0e-2, 1e-2, 1e-3, 1e-3])*1e0
+init_lrates=np.asarray([1e-2, 1e-2, 1e-2, 1e-2, 1e-3, 1e-3, 1e-2, 0e-2, 0e-2, 1e-2, 1e-3, 1e-3])*1e0
 
 learner=SGDLearner(total_params, total_loss, init_lrates=init_lrates,init_momentum_coeffs=[0.1])
 
@@ -155,7 +206,7 @@ weighthist=[]
 paramhist=[]
 proplosshist=[]
 min_learn_delay=80
-learn_counter=0
+learn_counter=-200
 nan_occurred=False
 preddatahist=[]
 #proposal_learner.global_lrate.set_value(np.float32(200.0))
@@ -193,7 +244,7 @@ for i in range(nt-1000):
 	#pp.plot(esshs)
 	#pp.show()
 	#esshist.append(newess)
-	if learn_counter>min_learn_delay:# and ess>nparticles/32:
+	if learn_counter>min_learn_delay:# and ess>nparticles/8:
 		perform_joint_sampling()
 		#pp.plot(stddevhist)
 		#pp.show()
@@ -218,9 +269,10 @@ for i in range(nt-1000):
 		
 		print 'Iteration ', i
 		print 'Loss: ', loss0, '  Proploss: ', proposal_learner.get_current_loss()
-		print tranproc.M.get_value()
-		print trueM
+		#print tranproc.M.get_value()
+		#print trueM
 		print tranproc.log_stddev.get_value()
+		print genproc.log_stddev.get_value()
 	
 	statesamps=PF.sample_current_state(100)
 	#preddatahist.append(np.mean(np.dot(statesamps,genproc.M.get_value()),axis=0))
@@ -236,10 +288,10 @@ for i in range(nt-1000):
 	
 	learn_counter+=1
 
-print tranproc.M.get_value()
-print trueM
+#print tranproc.M.get_value()
+#print trueM
 print tranproc.log_stddev.get_value()
-print true_log_stddev
+#print true_log_stddev
 print genproc.log_stddev.get_value()
 
 futuresamps,futurestates,futureinit=PF.sample_from_future(100,1000)
@@ -274,3 +326,16 @@ pp.plot(observations[n_history+2:],'b')
 pp.figure(6)
 pp.plot(paramhist)
 pp.show()
+
+if save_params:
+	f=open('tparams.cpl','wb')
+	cp.dump([param.get_value() for param in tranproc.params],f,2)
+	f.close()
+	f=open('gparams.cpl','wb')
+	cp.dump([param.get_value() for param in genproc.params],f,2)
+	f.close()
+
+if save_prop_model:
+	f=open('propparams.cpl','wb')
+	cp.dump([param.get_value() for param in proposal_model.params],f,2)
+	f.close()

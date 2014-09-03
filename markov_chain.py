@@ -22,13 +22,13 @@ n_history=100
 nt=6000
 
 save_params=True
-load_params=True
+load_params=False
 
 save_prop_model=True
-load_prop_model=True
+load_prop_model=False
 
-save_data=False
-load_data=True
+save_data=True
+load_data=False
 
 #======Making data=======================
 
@@ -43,26 +43,28 @@ else:
 	#trueM=np.eye(statedims,k=1)*16e-2
 	#trueM=trueM+trueM.T; trueM=trueM*antisym+np.eye(statedims)
 	
-	#trueG=np.sin(np.reshape(np.arange(statedims*datadims),(statedims,datadims))*10.0)*2.0
-	#trueG[0,:datadims/2]=0.0
-	#trueG[1,datadims/2:]=0.0
+	trueGM=np.sin(np.reshape(np.arange(statedims*datadims),(statedims,datadims))*10.0)*2.0
+	trueGM[0,:datadims/2]=0.0
+	trueGM[1,datadims/2:]=0.0
 	
 	#theta=0.08
 	#trueM=np.asarray([[np.cos(theta), -np.sin(theta)],[np.sin(theta), np.cos(theta)]],dtype='float32')
 	
-	trueG=MLmodel(statedims,datadims,2)
-	trueG.log_stddev.set_value((np.ones(datadims)*-2.5+np.arange(datadims)*0.2).astype(np.float32))
+	#trueG=MLmodel(statedims,datadims,2)
+	trueG=Lmodel(statedims,datadims)
+	trueG.log_stddev.set_value((np.ones(datadims)*-3.0+np.arange(datadims)*0.2).astype(np.float32))
+	trueG.M.set_value(trueGM.astype(np.float32))
 	inputT=T.fmatrix()
 	outputGT=trueG.get_samples_noprobs(inputT)
 	sampleG=theano.function([inputT],outputGT,allow_input_downcast=True)
 	
-	true_log_stddev=np.zeros(statedims)-3.0+np.arange(statedims)
+	true_log_stddev=np.zeros(statedims)-5.0#+np.arange(statedims)
 	trueM=MLmodel(statedims,statedims,3)
 	trueM.log_stddev.set_value(true_log_stddev.astype(np.float32))
 	Ms=np.zeros((3,statedims,statedims))
 	Ms[0,:,:]=np.eye(statedims)*0.99
-	theta1=0.6
-	theta2=0.9
+	theta1=0.4
+	theta2=0.6
 	Ms[1,:,:]=np.asarray([[np.cos(theta1), -np.sin(theta1)],[np.sin(theta1), np.cos(theta1)]])*1.2
 	Ms[2,:,:]=np.asarray([[np.cos(theta2), -np.sin(theta2)],[np.sin(theta2), np.cos(theta2)]])*1.2
 	centers=np.zeros((3,statedims))
@@ -184,7 +186,7 @@ total_loss=-(tranloss+genloss)
 
 init_lrates=np.asarray([4e-2, 4e-2, 4e-2, 4e-2, 1e-3, 2e-3, 4e-2, 0e-2, 0e-2, 4e-2, 1e-3, 1e-3])*5e-1
 
-learner=SGDLearner(total_params, total_loss, init_lrates=init_lrates,init_momentum_coeffs=[0.98])
+learner=SGDLearner(total_params, total_loss, init_lrates=init_lrates,init_momentum_coeffs=[0.95])
 
 
 proplogprobs=proposal_model.rel_log_prob(T.concatenate([PF.previous_state,
@@ -205,8 +207,8 @@ statehist=[]
 weighthist=[]
 paramhist=[]
 proplosshist=[]
-min_learn_delay=150
-learn_counter=-400
+min_learn_delay=100
+learn_counter=-200
 nan_occurred=False
 preddatahist=[]
 #proposal_learner.global_lrate.set_value(np.float32(200.0))
@@ -267,11 +269,11 @@ for i in range(nt-200):
 		while True:
 			for momentum in learner.momentums:
 				momentum.set_value((momentum.get_value()*0.0).astype(np.float32))
-			for j in range(400):
+			for j in range(200):
 				learner.perform_learning_step()
 				#lhs.append(learner.get_current_loss())
 			loss1=learner.get_current_loss()
-			if loss1>loss0:
+			if loss1>loss0 or np.isnan(loss1):
 				learner.global_lrate.set_value((learner.global_lrate.get_value()*0.95).astype(np.float32))
 				for i in range(len(gparams0)):
 					genproc.params[i].set_value(gparams0[i])
@@ -333,11 +335,15 @@ meanstate=np.sum(statehist*np.reshape(weighthist,(statehist.shape[0],statehist.s
 losshist=np.asarray(learner.loss_history)
 pp.plot(losshist[:,1])
 pp.figure(2)
-pp.plot(futuremeans,'r')
-pp.plot(futuremeans+futurevars,'g')
-pp.plot(futuremeans-futurevars,'g')
+
+pp.plot(futuremeans[:,:],'r')
+pp.plot(futuremeans[:,:]+futurevars[:,:],'g')
+pp.plot(futuremeans[:,:]-futurevars[:,:],'g')
+#for i in range(4):
+#	pp.plot(futuresamps[:,i,:],'r')
+
 #pp.plot(futuresamps.reshape((1000,10*datadims)),'r')
-pp.plot(observations[shared_t.get_value():],'b')
+pp.plot(observations[shared_t.get_value():,:],'b')
 pp.figure(3)
 pp.plot(meanstate,'r')
 pp.plot(true_s[n_history+2:shared_t.get_value()],'b')
@@ -349,6 +355,12 @@ pp.plot(np.concatenate([preddatahist,futuremeans]),'r')
 pp.plot(observations[n_history+2:],'b')
 pp.figure(6)
 pp.plot(paramhist)
+pp.figure(7)
+pp.plot(futuresamps[:,0,:3])
+pp.figure(8)
+pp.plot(futuresamps[:,1,:3])
+pp.figure(9)
+pp.plot(futuresamps[:,2,:3])
 pp.show()
 
 if save_params:

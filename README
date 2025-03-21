@@ -1,1 +1,5 @@
-A small collection of simple probabilistic generative models for modeling time series data, as well as some MCMC algorithms (e.g., particle filter) enabling inference and learning.
+This repository contains:
+-a small collection of simple probabilistic generative models for modeling time series data
+-some MCMC algorithms (e.g., particle filter) for inference of marginal distributions at each time point
+-an implementation of the forward-backward algorithm for sampling from the joint posterior distribution in time (this is a crucial step in the learning algorihthm, which is just EM)
+-some experimental code for adapting the proposal distribution as the model parameters change during learning to speed up inference
